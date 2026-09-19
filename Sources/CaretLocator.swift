@@ -20,16 +20,29 @@ enum CaretLocator {
     /// Lets callers record why they rejected a result, for the debug readout.
     static func note(_ text: String) { lastNote = text }
 
-    static func caret() -> Hit? {
+    /// The focused text input of the frontmost app, with a short messaging timeout applied.
+    static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, timeout)
+        guard let focused = copy(system, kAXFocusedUIElementAttribute) else { return nil }
+        let element = focused as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, timeout)
+        return element
+    }
 
-        guard let focused = copy(system, kAXFocusedUIElementAttribute) else {
+    /// The caret (or selection) of a text input, in UTF-16 units.
+    static func selectedRange(of element: AXUIElement) -> CFRange? {
+        guard let value = copy(element, kAXSelectedTextRangeAttribute) else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value as! AXValue, .cfRange, &range) else { return nil }
+        return range
+    }
+
+    static func caret() -> Hit? {
+        guard let element = focusedElement() else {
             lastNote = "フォーカスされた要素を取得できない"
             return nil
         }
-        let element = focused as! AXUIElement
-        AXUIElementSetMessagingTimeout(element, timeout)
 
         if let rect = caretBounds(of: element), rect.height > 0 {
             lastNote = "キャレットから取得"
@@ -45,9 +58,7 @@ enum CaretLocator {
 
     /// 選択範囲（キャレット）の矩形．これが取れるのが一番正確．
     private static func caretBounds(of element: AXUIElement) -> CGRect? {
-        guard let rangeValue = copy(element, kAXSelectedTextRangeAttribute) else { return nil }
-        var range = CFRange()
-        guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &range) else { return nil }
+        guard let range = selectedRange(of: element) else { return nil }
 
         // 長さ0だと矩形を返さないアプリがあるので最低1文字ぶん要求する．
         // 行頭にキャレットがある場合に備えて，直前の1文字でも試す．
@@ -75,7 +86,7 @@ enum CaretLocator {
         return CGRect(origin: origin, size: size)
     }
 
-    private static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+    static func copy(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
         var out: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &out) == .success else { return nil }
         return out

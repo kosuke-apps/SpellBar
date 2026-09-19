@@ -1,65 +1,78 @@
 import Cocoa
 import Carbon
 
-/// キー入力を監視し，日本語IMEの「変換」に相当する操作を英語入力に持ち込む中核．
+/// Watches the keyboard and brings the Japanese IME's "conversion" to English typing.
 ///
-/// CGEventTap を使うので AppKit 非対応アプリ (VS Code / Chrome / ターミナル) でも動く．
-/// コールバックは main run loop 上で走るため，絶対に重い処理を書かないこと．
-/// 候補生成は CandidateEngine.queue に逃がしている．
+/// A CGEventTap sees keys before any app does, so this works in apps that do not use AppKit text views
+/// (VS Code, Chrome, terminals). The tap callback runs on the main run loop and must stay cheap: candidate
+/// lookups run on `CandidateEngine.queue` and accessibility queries on `Engine.axQueue`.
 ///
-/// 操作モデル (日本語IMEに合わせている):
-///   打つ → 右Shift単押しで変換 → 右Shift連打で次候補 → Enter/Space で確定 → Esc で取り消し
+/// Interaction, modelled on the Japanese IME:
+///   type → tap right Shift to convert → tap again for the next candidate → Return/Space to confirm → Esc to undo
+/// Tapping right Shift with no word in progress converts the word behind the caret again.
 final class Engine {
 
     private let candidates = CandidateEngine()
     private var bar: CandidateBar!
     private var tap: CFMachPort?
+    private static let axQueue = DispatchQueue(label: "spellbar.accessibility")
 
-    // MARK: 状態
+    // MARK: State
 
-    /// 打ちかけの単語（未変換）
+    /// The word being typed, not yet converted.
     private var buffer = ""
-    /// 変換中かどうか．nil なら非変換．
+    /// The word just finished, while the caret stays right behind it. See `RecentWord`.
+    private var recent: RecentWord?
+    /// The conversion in progress, if any.
     private var conv: Conversion?
-    /// 候補計算のデバウンス／古い結果破棄のための世代番号
+    /// Bumped on every keystroke, so late async results for an older state are dropped.
     private var generation = 0
-    /// 自分が注入したイベントを識別する印
+    /// Marks events SpellBar injects itself, so the tap ignores them.
     private let injectMark: Int64 = 0x5350_4C42  // "SPLB"
     private var kanaMode = false
-    /// 語義の非同期取得が古い候補のものでないかを見るための番号
+    /// Drops definition lookups that finish after the selection moved on.
     private var defToken = 0
 
-    /// 変換キーを使わず，打っている最中から候補を出し続けるモード
+    /// Show candidates while typing, without waiting for the conversion key.
     var alwaysShow = true { didSet { if !alwaysShow && conv == nil { bar.hide() } } }
     var enabled = true { didSet { if !enabled { reset() } } }
 
-    /// 候補ウィンドウを画面のどこに出すか．
     var placement: CandidateBar.Placement {
         get { bar.placement }
         set { bar.placement = newValue }
     }
 
-    /// 位置の判定結果を候補ウィンドウに出す．効かないアプリの切り分け用．
+    /// Shows the placement diagnosis in the candidate window, to find apps where following the caret fails.
     var debugPlacement: Bool {
         get { bar.debug }
         set { bar.debug = newValue }
     }
 
     private struct Conversion {
-        let original: String        // 元の綴り
-        var list: [String]          // 候補（末尾に original を入れて一周できるようにする）
-        var index: Int              // いま当てている候補
-        var placed: String          // いま実際にアプリ側へ置いてある文字列
+        let original: String        // the spelling before conversion
+        var list: [String]          // candidates; the original is appended so cycling can return to it
+        var index: Int              // the candidate currently placed
+        var placed: String          // the text actually in the app right now
+        /// Separators typed after the word before it was converted again ("word, " keeps its ", ").
+        let suffix: String
     }
 
-    // 右Shift単押しの検出用
+    /// A finished word the caret is still right behind: "receive" followed by at most a few separators.
+    /// While it lasts, the conversion key converts it again and Backspace steps back into it.
+    private struct RecentWord {
+        var word: String
+        var suffix: String
+    }
+
+    // Detecting a solo tap of right Shift
     private var rShiftDownAt: CFAbsoluteTime?
     private var keyPressedWhileShift = false
     private let soloTapLimit: CFAbsoluteTime = 0.4
     private static let rightShiftKeycode: Int64 = 60
     private static let rightShiftFlagBit: UInt64 = 0x0004   // NX_DEVICERSHIFTKEYMASK
 
-    private let digitKeycodes: [Int64] = [18, 19, 20, 21, 23]  // 1,2,3,4,5
+    private let digitKeycodes: [Int64] = [18, 19, 20, 21, 23]  // 1, 2, 3, 4, 5
+    private static let rightArrow: CGKeyCode = 124
 
     init() {
         bar = CandidateBar { [weak self] i in self?.confirm(index: i) }
@@ -67,7 +80,7 @@ final class Engine {
         observeAppSwitch()
     }
 
-    // MARK: - 起動
+    // MARK: - Start
 
     func start() -> Bool {
         let mask = (1 << CGEventType.keyDown.rawValue)
@@ -91,7 +104,7 @@ final class Engine {
         return true
     }
 
-    // MARK: - イベント処理 (main thread / 軽量に保つこと)
+    // MARK: - Event handling (main thread; keep it cheap)
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         let pass = Unmanaged.passUnretained(event)
@@ -105,9 +118,9 @@ final class Engine {
 
         if type == .leftMouseDown { keyPressedWhileShift = true; reset(); return pass }
 
-        // パスワード欄などセキュア入力中は完全に停止
+        // Stay out of password fields and other secure input entirely.
         if IsSecureEventInputEnabled() { reset(); return pass }
-        // 日本語IMEのかな入力中は変換候補と衝突するので黙る
+        // While the Japanese IME composes kana, its own candidates take over.
         if kanaMode { reset(); return pass }
 
         if type == .flagsChanged { return handleFlags(event: event) == .swallow ? nil : pass }
@@ -115,10 +128,10 @@ final class Engine {
         return handleKeyDown(event: event) == .swallow ? nil : pass
     }
 
-    /// このキーをアプリへ通すか，握りつぶすか
+    /// Whether the app receives the key or SpellBar consumes it.
     private enum Disposition { case pass, swallow }
 
-    /// 右Shiftの単押し（押してから離すまでに他キーが挟まらない）を「変換キー」とみなす．
+    /// A solo tap of right Shift (pressed and released with no other key in between) is the conversion key.
     private func handleFlags(event: CGEvent) -> Disposition {
         guard event.getIntegerValueField(.keyboardEventKeycode) == Engine.rightShiftKeycode else { return .pass }
         let isDown = (event.flags.rawValue & Engine.rightShiftFlagBit) != 0
@@ -133,7 +146,7 @@ final class Engine {
         } else {
             rShiftDownAt = nil
         }
-        return .pass   // Shift自体は握りつぶさずアプリへ通す
+        return .pass   // Shift itself always reaches the app
     }
 
     private func handleKeyDown(event: CGEvent) -> Disposition {
@@ -144,76 +157,136 @@ final class Engine {
         let cmd = flags.contains(.maskCommand)
         let ctrl = flags.contains(.maskControl)
 
-        // ⌘1〜⌘5 は候補が出ている間だけ横取りする
-        // ⌘D: いま当たっている語を辞書アプリで引く
-        if cmd, keycode == 2, let word = focusedWord() {
-            openInDictionary(word)
-            return .swallow
+        // Shortcuts are taken only while the candidate window is on screen; otherwise they belong to the app.
+        if cmd, bar.isVisible {
+            if keycode == 2, let word = focusedWord() {                  // ⌘D: look the word up
+                openInDictionary(word)
+                return .swallow
+            }
+            let count = conv?.list.count ?? barItems.count
+            if let idx = digitKeycodes.firstIndex(of: keycode), idx < count {   // ⌘1–⌘5: pick directly
+                DispatchQueue.main.async { [weak self] in self?.confirm(index: idx) }
+                return .swallow
+            }
         }
 
-        let visibleCount = conv?.list.count ?? barItems.count
-        if cmd, visibleCount > 0, let idx = digitKeycodes.firstIndex(of: keycode), idx < visibleCount {
-            DispatchQueue.main.async { [weak self] in self?.confirm(index: idx) }
-            return .swallow
-        }
-
-        // --- 変換中の操作 ---
         if let active = conv {
             switch keycode {
-            case 36, 76:  confirm(index: active.index);                  return .swallow  // Enter: 確定
-            case 49:      confirm(index: active.index, thenSpace: true);  return .swallow  // Space: 確定して空白
-            case 53:      cancelConversion();                            return .swallow  // Esc: 元に戻す
-            case 125, 48: cycle(+1);                                     return .swallow  // ↓ / Tab: 次候補
-            case 126:     cycle(-1);                                     return .swallow  // ↑: 前候補
+            case 36, 76:  confirm(index: active.index);                  return .swallow  // Return: confirm
+            case 49:      confirm(index: active.index, thenSpace: true);  return .swallow  // Space: confirm + space
+            case 53:      cancelConversion();                            return .swallow  // Esc: restore
+            case 125, 48: cycle(+1);                                     return .swallow  // ↓ / Tab: next
+            case 126:     cycle(-1);                                     return .swallow  // ↑: previous
             default:
-                // それ以外のキーはいまの候補で確定し，そのキー自体はアプリへ通す
+                // Any other key confirms the current candidate and is then handled as ordinary typing,
+                // so a letter continues the word ("receive" + "d") and punctuation ends it.
                 finishConversion()
-                return .pass
             }
         }
 
         if ctrl || cmd { reset(); return .pass }
 
-        // --- 通常入力: 打ちかけの単語を追う ---
         switch keycode {
-        case 53:  reset(); return .pass                             // Esc
-        case 51:                                                    // Backspace
-            if !buffer.isEmpty { buffer.removeLast(); refreshAlwaysShow() } else { reset() }
-            return .pass
-        case 123...126, 115, 116, 119, 121:                         // 矢印 / Home / End / PageUp / PageDown
+        case 53:                                  // Esc
             reset(); return .pass
-        default: break
+        case 51:                                  // Backspace
+            backspace(); return .pass
+        case 36, 76, 48, 123...126, 115, 116, 119, 121:
+            // Return, Tab, arrows, Home/End/Page Up/Page Down: the caret leaves the word.
+            reset(); return .pass
+        default:
+            break
         }
 
         let ns = NSEvent(cgEvent: event)
         guard let c = (ns?.characters ?? ns?.charactersIgnoringModifiers)?.first else { reset(); return .pass }
-        if c.isLetter || c == "'" {
+
+        if TextContext.isWordCharacter(c) {
+            if buffer.isEmpty, let r = recent {
+                // Straight after a confirmed word the word goes on; after a separator a new one starts.
+                buffer = r.suffix.isEmpty ? r.word : ""
+                recent = nil
+            }
             buffer.append(c)
             refreshAlwaysShow()
+        } else if TextContext.isInlineSeparator(c) {
+            if !buffer.isEmpty {
+                endWord(keeping: RecentWord(word: buffer, suffix: String(c)))
+            } else if var r = recent, r.suffix.count < TextContext.maxSuffix {
+                r.suffix.append(c)
+                recent = r
+            } else {
+                reset()
+            }
         } else {
             reset()
         }
         return .pass
     }
 
-    // MARK: - 変換
+    /// Backspace shortens the word being typed. Past its start it steps back over the separators into the
+    /// previous word, which becomes the word being typed again.
+    private func backspace() {
+        if !buffer.isEmpty {
+            buffer.removeLast()
+            refreshAlwaysShow()
+            return
+        }
+        guard var r = recent else { reset(); return }
+        if r.suffix.isEmpty {
+            buffer = String(r.word.dropLast())
+            recent = nil
+        } else {
+            r.suffix.removeLast()
+            guard r.suffix.isEmpty else { recent = r; return }
+            buffer = r.word
+            recent = nil
+        }
+        refreshAlwaysShow()
+    }
 
-    /// 右Shift単押し．非変換なら変換開始，変換中なら次候補へ．
+    // MARK: - Conversion
+
+    /// Right Shift tapped. Converts the word being typed, else the word just finished, else the word at the
+    /// caret. During a conversion it moves to the next candidate.
     private func convertKeyPressed() {
         if conv != nil { cycle(+1); return }
-        let word = buffer
-        guard word.count >= 2 else { return }
+        if buffer.count >= 2 { beginConversion(of: buffer, suffix: ""); return }
+        if let r = recent, r.word.count >= 2 { beginConversion(of: r.word, suffix: r.suffix); return }
+        reconvertAtCaret()
+    }
 
+    /// Converts a word the user came back to by moving the caret. Its text is read through the accessibility
+    /// API, off the main thread because the target app may answer slowly.
+    private func reconvertAtCaret() {
+        generation &+= 1
+        let gen = generation
+        Engine.axQueue.async { [weak self] in
+            let found = TextContext.wordAtCaret()
+            DispatchQueue.main.async {
+                guard let self, gen == self.generation, self.conv == nil else { return }
+                guard let word = found else { NSSound.beep(); return }
+                // Move the caret to the end of the word so the usual backspace-and-retype replacement applies.
+                // A right arrow collapses a selection to its end.
+                let moves = word.caretToWordEnd + (word.selected ? 1 : 0)
+                for _ in 0..<moves { Injector.tap(virtualKey: Engine.rightArrow, mark: self.injectMark) }
+                self.beginConversion(of: word.text, suffix: word.suffix)
+            }
+        }
+    }
+
+    private func beginConversion(of word: String, suffix: String) {
         generation &+= 1
         let gen = generation
         CandidateEngine.queue.async { [weak self] in
             guard let self else { return }
             let list = self.candidates.candidates(for: word)
             DispatchQueue.main.async {
-                guard gen == self.generation, self.conv == nil, self.buffer == word else { return }
+                guard gen == self.generation, self.conv == nil else { return }
                 guard !list.isEmpty else { NSSound.beep(); return }
-                // 末尾に元の綴りを足しておき，一周すると元に戻れるようにする
-                self.conv = Conversion(original: word, list: list + [word], index: 0, placed: word)
+                self.buffer = ""
+                self.recent = nil
+                self.conv = Conversion(original: word, list: list + [word], index: 0, placed: word, suffix: suffix)
                 self.apply(index: 0)
             }
         }
@@ -225,23 +298,22 @@ final class Engine {
         apply(index: ((c.index + delta) % n + n) % n)
     }
 
-    /// 候補 index の文字列を実際にアプリへ書き込み，候補ウィンドウを更新する．
+    /// Writes candidate `index` into the app and updates the candidate window.
     private func apply(index: Int) {
         guard var c = conv, index < c.list.count else { return }
         let next = c.list[index]
         if next != c.placed {
-            Injector.replace(deleting: c.placed.count, with: next, mark: injectMark)
+            Injector.replace(deleting: c.placed.count + c.suffix.count, with: next + c.suffix, mark: injectMark)
             c.placed = next
         }
         c.index = index
         conv = c
-        buffer = next
         bar.show(pending: c.original, candidates: c.list, selected: index)
         lookupDefinition(for: next, at: index)
     }
 
-    /// 選択中の候補の語義を辞書から引いて，候補ウィンドウの2行目に出す．
-    /// 「この単語で合っているか」を確かめられるようにするための表示．
+    /// Looks up the selected candidate in the dictionary and shows the meaning on the second row,
+    /// so the user can check it is the word they meant.
     private func lookupDefinition(for word: String, at index: Int) {
         defToken &+= 1
         let token = defToken
@@ -257,21 +329,25 @@ final class Engine {
 
     private func confirm(index: Int, thenSpace: Bool = false) {
         if let c = conv {
+            guard index < c.list.count else { return }
             apply(index: index)
-            learn(typed: c.original, chosen: conv?.placed ?? c.list[index])
+            learn(typed: c.original, chosen: c.list[index])
             finishConversion()
         } else {
-            // 常時表示モードから直接確定した場合
+            // Picked straight from the always-on candidates.
             guard index < barItems.count else { return }
             let word = barItems[index]
             learn(typed: buffer, chosen: word)
             Injector.replace(deleting: buffer.count, with: word, mark: injectMark)
-            reset()
+            endWord(keeping: RecentWord(word: word, suffix: ""))
         }
-        if thenSpace { Injector.tap(virtualKey: 49, mark: injectMark) }
+        if thenSpace {
+            Injector.tap(virtualKey: 49, mark: injectMark)
+            recent?.suffix.append(" ")
+        }
     }
 
-    /// いま注目している語．変換中ならその候補，そうでなければ先頭候補，無ければ打ちかけの語．
+    /// The word the user is looking at: the selected candidate, else the first candidate, else the typed word.
     private func focusedWord() -> String? {
         if let c = conv { return c.list[c.index] }
         if let first = barItems.first { return first }
@@ -284,7 +360,7 @@ final class Engine {
         NSWorkspace.shared.open(url)
     }
 
-    /// 選んだ結果を覚えて，次から同じ打ち間違いで最優先に出す．
+    /// Remembers the choice, so the same misspelling offers it first next time.
     private func learn(typed: String, chosen: String) {
         guard !typed.isEmpty, typed != chosen else { return }
         CandidateEngine.queue.async { [weak self] in
@@ -292,23 +368,33 @@ final class Engine {
         }
     }
 
+    /// Esc during a conversion: put the original spelling back.
     private func cancelConversion() {
         guard let c = conv else { return }
         if c.placed != c.original {
-            Injector.replace(deleting: c.placed.count, with: c.original, mark: injectMark)
+            Injector.replace(deleting: c.placed.count + c.suffix.count, with: c.original + c.suffix,
+                             mark: injectMark)
         }
         conv = nil
-        buffer = c.original
         bar.hide()
+        if c.suffix.isEmpty {
+            buffer = c.original
+        } else {
+            recent = RecentWord(word: c.original, suffix: c.suffix)
+        }
     }
 
+    /// Ends the conversion with the current candidate in place. The caret stays right behind it,
+    /// so the word can still be converted again or backspaced into.
     private func finishConversion() {
+        guard let c = conv else { return }
         conv = nil
-        buffer = ""
         bar.hide()
+        buffer = ""
+        recent = RecentWord(word: c.placed, suffix: c.suffix)
     }
 
-    // MARK: - 常時表示モード
+    // MARK: - Always-on candidates
 
     private var barItems: [String] = []
     private var shownDefinition: String?
@@ -320,9 +406,13 @@ final class Engine {
         let word = buffer
         guard !word.isEmpty else { barItems = []; bar.hide(); return }
 
-        // 1文字目から枠は出しておく．候補が空でも引っ込めない．
-        // 新しい候補が届くまでの数十msは直前の候補をそのまま見せる（毎打鍵で空にすると点滅する）．
-        bar.show(pending: word, candidates: barItems, selected: nil, definition: shownDefinition)
+        // Show the window from the first letter and keep it while there are no candidates.
+        // Until new candidates arrive, the previous ones stay (clearing them on every key would flicker).
+        // Deferred out of the tap callback: showing the window may query the app for the caret position.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, gen == self.generation, self.conv == nil else { return }
+            self.bar.show(pending: word, candidates: self.barItems, selected: nil, definition: self.shownDefinition)
+        }
         guard word.count >= 2 else { return }
 
         CandidateEngine.queue.asyncAfter(deadline: .now() + 0.06) { [weak self] in
@@ -338,16 +428,28 @@ final class Engine {
         }
     }
 
-    private func reset() {
-        if conv != nil { finishConversion() }
+    /// Stops tracking the word being typed but remembers it as the recent word.
+    private func endWord(keeping word: RecentWord) {
         buffer = ""
+        barItems = []
+        shownDefinition = nil
+        generation &+= 1
+        recent = word
+        bar.hide()
+    }
+
+    /// Forgets everything: the caret has moved somewhere SpellBar cannot follow.
+    private func reset() {
+        conv = nil
+        buffer = ""
+        recent = nil
         barItems = []
         shownDefinition = nil
         generation &+= 1
         bar.hide()
     }
 
-    // MARK: - 監視
+    // MARK: - Observers
 
     private func observeInputSource() {
         updateKanaMode()
@@ -361,7 +463,7 @@ final class Engine {
         guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
               let ptr = TISGetInputSourceProperty(src, kTISPropertyInputSourceID) else { kanaMode = false; return }
         let id = Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
-        // 例: com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese (かな) / ....Roman (英数)
+        // e.g. com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese (kana) / ….Roman (alphanumeric)
         kanaMode = id.hasSuffix(".Japanese") || id.contains("Hiragana") || id.contains("Katakana")
     }
 
@@ -372,13 +474,13 @@ final class Engine {
     }
 }
 
-/// 打ちかけの文字を消して，選んだ候補を打ち直す．
+/// Deletes typed characters and types the chosen candidate in their place.
 enum Injector {
     static func replace(deleting count: Int, with word: String, mark: Int64) {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
         source.userData = mark
         for _ in 0..<count { post(source, virtualKey: 51, mark: mark); usleep(1200) }   // Backspace
-        // keyboardSetUnicodeString は一度に多く積むと取りこぼすアプリがあるので刻む
+        // Some apps drop characters when too many arrive in one event, so send small chunks.
         for chunk in word.chunked(8) {
             let units = Array(chunk.utf16)
             for down in [true, false] {
@@ -395,6 +497,7 @@ enum Injector {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
         source.userData = mark
         post(source, virtualKey: virtualKey, mark: mark)
+        usleep(1200)
     }
 
     private static func post(_ source: CGEventSource, virtualKey: CGKeyCode, mark: Int64) {

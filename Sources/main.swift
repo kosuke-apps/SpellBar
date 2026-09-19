@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(position)
 
         menu.addItem(.separator())
-        for line in ["右Shift 単押し … 変換 / 次候補",
+        for line in ["右Shift 単押し … 変換 / 次候補 / 再変換",
                      "return … 確定",
                      "space … 確定して空白を入れる",
                      "esc … 元の綴りに戻す",
@@ -194,6 +194,37 @@ if CommandLine.arguments.contains("--selftest") {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             print(String(format: "%-12@ %4dms -> %@", s as NSString, ms, c.joined(separator: ", ")))
         }
+        print("\n--- reconversion: word at caret ('|' marks the caret) ---")
+        let cases: [(String, String?)] = [
+            ("hello wrold|", "wrold / '' / →0"),
+            ("hello wrold |", "wrold / ' ' / →0"),
+            ("hello wrold, |", "wrold / ', ' / →0"),
+            ("hello wrold.  |", "wrold / '.  ' / →0"),
+            ("hello wrold    |", nil),                  // more separators than maxSuffix
+            ("hello wr|old", "wrold / '' / →3"),
+            ("hello |wrold", "wrold / '' / →5"),
+            ("hello\n|", nil),                          // a line break ends the search
+            ("don't|", "don't / '' / →0"),
+            ("it\u{2019}s|", "it\u{2019}s / '' / →0"),
+            ("a|", nil),                                // too short
+            ("|", nil),
+            ("x = 12|", nil),                           // digits are not a word
+            ("\u{201C}quoted\u{201D} wrold.|", "wrold / '.' / →0"),
+        ]
+        var failures = 0
+        for (input, expected) in cases {
+            let caret = (input as NSString).range(of: "|").location
+            let text = (input as NSString).replacingOccurrences(of: "|", with: "") as NSString
+            let got = TextContext.word(in: text, caret: caret).map {
+                "\($0.text) / '\($0.suffix)' / →\($0.caretToWordEnd)"
+            }
+            let ok = got == expected
+            if !ok { failures += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(input.debugDescription.padding(toLength: 28, withPad: " ", startingAt: 0))"
+                  + " -> \(got ?? "nil")\(ok ? "" : "   (expected \(expected ?? "nil"))")")
+        }
+        print(failures == 0 ? "all \(cases.count) passed" : "\(failures) FAILED")
+
         print("\n--- 語義 ---")
         for w in ["receive", "environment", "definitely", "separate", "occurrence", "async"] {
             print(String(format: "%-12@ %@", w as NSString, Definitions.lookup(w) ?? "(辞書になし)"))
