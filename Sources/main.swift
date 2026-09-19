@@ -1,5 +1,10 @@
 import Cocoa
+import OSLog
 import ServiceManagement
+
+/// Records permission state at launch, to check from Terminal that permissions survived an update:
+/// `/usr/bin/log show --last 5m --predicate 'subsystem == "local.spellbar"'`. Never logs anything typed.
+private let launchLog = Logger(subsystem: "local.spellbar", category: "launch")
 
 /// メニューバー常駐のみ．Dock アイコンは出さない (Info.plist の LSUIElement)．
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -15,7 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(opts)
 
-        if !engine.start() {
+        let tapStarted = engine.start()
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        launchLog.notice("""
+            launch build=\(version, privacy: .public) accessibility=\(trusted, privacy: .public) \
+            inputMonitoring=\(CGPreflightListenEventAccess(), privacy: .public) eventTap=\(tapStarted, privacy: .public)
+            """)
+
+        if !tapStarted {
             statusItem.button?.image = NSImage(systemSymbolName: "exclamationmark.triangle",
                                                accessibilityDescription: "SpellBar")
             let a = NSAlert()
