@@ -17,6 +17,9 @@ enum CaretLocator {
     /// 直近の取得結果．うまくいかないアプリを切り分けるためのデバッグ表示に使う．
     private(set) static var lastNote = "未取得"
 
+    /// Lets callers record why they rejected a result, for the debug readout.
+    static func note(_ text: String) { lastNote = text }
+
     static func caret() -> Hit? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, timeout)

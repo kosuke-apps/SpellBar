@@ -184,10 +184,15 @@ final class CandidateBar {
     /// 既定は日本語IMEの候補ウィンドウと同じく，入力位置のすぐ下（入らなければ上）．
     enum Placement: Int { case followCaret, bottom, top }
 
+    /// Show on every Space (desktop), including full-screen ones.
+    private static let spacesBehavior: NSWindow.CollectionBehavior =
+        [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+
     private let panel: NSPanel
     private let view = BarView()
     private(set) var isVisible = false
-    private var placedOn: NSRect = .zero
+    /// Set when the screen layout or the placement mode changes, so the next show re-places the panel.
+    private var needsPlacement = true
     private var placedAtTop = false
     private var anchor = NSPoint.zero
     private var anchorLimit: CGFloat = 760
@@ -202,7 +207,7 @@ final class CandidateBar {
     var debug = false
 
     var placement: Placement = .followCaret {
-        didSet { placedOn = .zero }      // 次に出すときに置き直す
+        didSet { needsPlacement = true }
     }
 
     init(onPick: @escaping (Int) -> Void) {
@@ -216,7 +221,7 @@ final class CandidateBar {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        panel.collectionBehavior = CandidateBar.spacesBehavior
 
         let blur = NSVisualEffectView()
         blur.material = .hudWindow
@@ -229,6 +234,20 @@ final class CandidateBar {
         panel.contentView = blur
 
         view.onPick = onPick
+
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.needsPlacement = true }
+    }
+
+    /// Registers the panel on every Space again.
+    ///
+    /// When SpellBar starts as a login item, the window server can take the panel before Spaces are ready and
+    /// pin it to the first desktop; it then never appears on the others. Clearing and setting the behavior
+    /// re-registers it. The panel is hidden when this runs, so nothing flickers.
+    private func joinAllSpaces() {
+        panel.collectionBehavior = []
+        panel.collectionBehavior = CandidateBar.spacesBehavior
     }
 
     /// 位置を決めるのは「単語を打ち始めたとき」と「画面が変わったとき」だけ．
@@ -239,12 +258,17 @@ final class CandidateBar {
 
         if placement == .followCaret {
             hit = CaretLocator.caret()
-            if let r = hit?.rect,
-               let s = NSScreen.screens.first(where: { $0.frame.intersects(r) }) { screen = s }
+            // A caret rect that lies on no screen is garbage; placing by it would push the panel off-screen.
+            if let r = hit?.rect, let s = NSScreen.screens.first(where: { $0.frame.intersects(r) }) {
+                screen = s
+            } else if hit != nil {
+                hit = nil
+                CaretLocator.note("caret reported outside every screen")
+            }
         }
 
         let vf = screen.visibleFrame
-        placedOn = vf
+        needsPlacement = false
         let w = min(maxWidth, vf.width - sideMargin * 2)
         let bottomY = vf.minY + edgeGap
         let topY = vf.maxY - BarView.totalHeight - edgeGap
@@ -264,7 +288,8 @@ final class CandidateBar {
                 // 縦は原則キャレットの下．入らなければ上に出す．
                 let below = caret.minY - BarView.totalHeight - caretGap
                 let above = caret.maxY + caretGap
-                y = below >= vf.minY + 8 ? below : min(above, topY)
+                y = below >= vf.minY + 8 ? below : above
+                y = min(max(y, vf.minY + 8), topY)          // never leave the visible area
                 lastNote = String(format: "%@ x%.0f y%.0f (%@)",
                                   hit!.source, caret.minX, caret.minY, CaretLocator.lastNote)
             } else {
@@ -291,8 +316,12 @@ final class CandidateBar {
 
     func show(pending: String?, candidates: [String], selected: Int?, definition: String? = nil) {
         guard pending != nil || !candidates.isEmpty else { hide(); return }
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        if !isVisible || placedOn != screen.visibleFrame { place() }
+        if !isVisible {
+            joinAllSpaces()
+            place()
+        } else if needsPlacement {
+            place()
+        }
         view.debugOverride = debug ? "［位置］\(lastNote)" : nil
         view.update(pending: pending, items: candidates, selected: selected, definition: definition)
         resizeToContent()
