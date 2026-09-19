@@ -225,6 +225,77 @@ if CommandLine.arguments.contains("--selftest") {
         }
         print(failures == 0 ? "all \(cases.count) passed" : "\(failures) FAILED")
 
+        print("\n--- word tracking: replayed keystrokes ('⌫' is Backspace) ---")
+        // Replays keys through WordTracker the way Engine.handleKeyDown classifies them.
+        func replay(_ keys: String, from start: WordTracker = WordTracker()) -> WordTracker {
+            var t = start
+            for k in keys {
+                if k == "⌫" { _ = t.backspace() }
+                else if TextContext.isWordCharacter(k) { t.letter(k) }
+                else if TextContext.isInlineSeparator(k) { _ = t.separator(k) }
+                else { t.reset() }
+            }
+            return t
+        }
+        var afterReceive = WordTracker(); afterReceive.placed("receive")
+        let tracking: [(String, WordTracker, String?)] = [
+            ("hel  ⌫⌫lo", WordTracker(), "hello / ''"),     // both spaces deleted: one word again
+            ("hel  ⌫lo", WordTracker(), "lo / ''"),         // one space left: a new word
+            ("hel ", WordTracker(), "hel / ' '"),
+            ("hel  ", WordTracker(), "hel / '  '"),
+            ("hel    ", WordTracker(), nil),                // too many separators
+            ("hel ⌫⌫", WordTracker(), "he / ''"),
+            ("abc⌫⌫⌫⌫", WordTracker(), nil),
+            ("abc⌫⌫⌫⌫xy", WordTracker(), "xy / ''"),
+            ("hel, wrold", WordTracker(), "wrold / ''"),
+            ("d", afterReceive, "received / ''"),          // typing right after a confirmed word
+            (", ", afterReceive, "receive / ', '"),
+        ]
+        var trackFailures = 0
+        for (keys, start, expected) in tracking {
+            let got = replay(keys, from: start).target.map { "\($0.word) / '\($0.suffix)'" }
+            let ok = got == expected
+            if !ok { trackFailures += 1 }
+            let label = (start.finished.map { "[\($0.word)] " } ?? "") + keys
+            print("\(ok ? "ok  " : "FAIL") \(label.debugDescription.padding(toLength: 24, withPad: " ", startingAt: 0))"
+                  + " -> \(got ?? "nil")\(ok ? "" : "   (expected \(expected ?? "nil"))")")
+        }
+        print(trackFailures == 0 ? "all \(tracking.count) passed" : "\(trackFailures) FAILED")
+
+        print("\n--- choosing between keystrokes and the app's text ---")
+        typealias F = WordTracker.Finished
+        typealias W = TextContext.Word
+        func w(_ text: String, _ suffix: String = "", right: Int = 0, selected: Bool = false) -> W {
+            W(text: text, suffix: suffix, caretToWordEnd: right, selected: selected)
+        }
+        let choices: [(String, F?, W?, ConversionTarget?)] = [
+            ("spaces deleted: app joined the word", F(word: "lo", suffix: ""), w("hello"), .atCaret(w("hello"))),
+            ("two spaces became '. '", F(word: "hel", suffix: "  "), w("hel", ". "), .atCaret(w("hel", ". "))),
+            ("autocorrected, same length", F(word: "teh", suffix: " "), w("the", " "), .atCaret(w("the", " "))),
+            ("app text lags one letter", F(word: "hello", suffix: ""), w("hell"), .tracked(F(word: "hello", suffix: ""))),
+            ("app text lags the space", F(word: "hello", suffix: " "), w("hello"), .tracked(F(word: "hello", suffix: " "))),
+            ("caret elsewhere in the word", F(word: "lo", suffix: ""), w("hello", right: 2), .tracked(F(word: "lo", suffix: ""))),
+            ("unrelated word at caret", F(word: "lo", suffix: ""), w("world"), .tracked(F(word: "lo", suffix: ""))),
+            ("app gives no text", F(word: "lo", suffix: ""), nil, .tracked(F(word: "lo", suffix: ""))),
+            ("caret moved: only the app knows", nil, w("wrold", right: 3), .atCaret(w("wrold", right: 3))),
+            ("nothing anywhere", nil, nil, nil),
+        ]
+        var choiceFailures = 0
+        for (label, tracked, actual, expected) in choices {
+            let got = ConversionTarget.choose(tracked: tracked, actual: actual)
+            let ok = got == expected
+            if !ok { choiceFailures += 1 }
+            let shown: String = {
+                switch got {
+                case .tracked(let f)?: return "keys: \(f.word) '\(f.suffix)'"
+                case .atCaret(let a)?: return "app:  \(a.text) '\(a.suffix)'"
+                case nil: return "nil"
+                }
+            }()
+            print("\(ok ? "ok  " : "FAIL") \(label.padding(toLength: 36, withPad: " ", startingAt: 0)) -> \(shown)")
+        }
+        print(choiceFailures == 0 ? "all \(choices.count) passed" : "\(choiceFailures) FAILED")
+
         print("\n--- 語義 ---")
         for w in ["receive", "environment", "definitely", "separate", "occurrence", "async"] {
             print(String(format: "%-12@ %@", w as NSString, Definitions.lookup(w) ?? "(辞書になし)"))

@@ -19,10 +19,8 @@ final class Engine {
 
     // MARK: State
 
-    /// The word being typed, not yet converted.
-    private var buffer = ""
-    /// The word just finished, while the caret stays right behind it. See `RecentWord`.
-    private var recent: RecentWord?
+    /// The word behind the caret, followed from keystrokes.
+    private var words = WordTracker()
     /// The conversion in progress, if any.
     private var conv: Conversion?
     /// Bumped on every keystroke, so late async results for an older state are dropped.
@@ -55,13 +53,6 @@ final class Engine {
         var placed: String          // the text actually in the app right now
         /// Separators typed after the word before it was converted again ("word, " keeps its ", ").
         let suffix: String
-    }
-
-    /// A finished word the caret is still right behind: "receive" followed by at most a few separators.
-    /// While it lasts, the conversion key converts it again and Backspace steps back into it.
-    private struct RecentWord {
-        var word: String
-        var suffix: String
     }
 
     // Detecting a solo tap of right Shift
@@ -202,22 +193,11 @@ final class Engine {
         guard let c = (ns?.characters ?? ns?.charactersIgnoringModifiers)?.first else { reset(); return .pass }
 
         if TextContext.isWordCharacter(c) {
-            if buffer.isEmpty, let r = recent {
-                // Straight after a confirmed word the word goes on; after a separator a new one starts.
-                buffer = r.suffix.isEmpty ? r.word : ""
-                recent = nil
-            }
-            buffer.append(c)
+            words.letter(c)
             refreshAlwaysShow()
         } else if TextContext.isInlineSeparator(c) {
-            if !buffer.isEmpty {
-                endWord(keeping: RecentWord(word: buffer, suffix: String(c)))
-            } else if var r = recent, r.suffix.count < TextContext.maxSuffix {
-                r.suffix.append(c)
-                recent = r
-            } else {
-                reset()
-            }
+            let wasTyping = !words.typing.isEmpty
+            if !words.separator(c) { reset() } else if wasTyping { endWord() }
         } else {
             reset()
         }
@@ -227,50 +207,38 @@ final class Engine {
     /// Backspace shortens the word being typed. Past its start it steps back over the separators into the
     /// previous word, which becomes the word being typed again.
     private func backspace() {
-        if !buffer.isEmpty {
-            buffer.removeLast()
-            refreshAlwaysShow()
-            return
-        }
-        guard var r = recent else { reset(); return }
-        if r.suffix.isEmpty {
-            buffer = String(r.word.dropLast())
-            recent = nil
-        } else {
-            r.suffix.removeLast()
-            guard r.suffix.isEmpty else { recent = r; return }
-            buffer = r.word
-            recent = nil
-        }
+        guard words.backspace() else { reset(); return }
         refreshAlwaysShow()
     }
 
     // MARK: - Conversion
 
-    /// Right Shift tapped. Converts the word being typed, else the word just finished, else the word at the
-    /// caret. During a conversion it moves to the next candidate.
+    /// Right Shift tapped. Converts the word behind the caret: the one being typed, the one just finished, or
+    /// the one the caret was moved to. During a conversion it moves to the next candidate.
+    ///
+    /// The app's text is read first, off the main thread because the app may answer slowly; see
+    /// `ConversionTarget.choose` for when it wins over the word followed from keystrokes.
     private func convertKeyPressed() {
         if conv != nil { cycle(+1); return }
-        if buffer.count >= 2 { beginConversion(of: buffer, suffix: ""); return }
-        if let r = recent, r.word.count >= 2 { beginConversion(of: r.word, suffix: r.suffix); return }
-        reconvertAtCaret()
-    }
-
-    /// Converts a word the user came back to by moving the caret. Its text is read through the accessibility
-    /// API, off the main thread because the target app may answer slowly.
-    private func reconvertAtCaret() {
+        let tracked = words.target
         generation &+= 1
         let gen = generation
         Engine.axQueue.async { [weak self] in
-            let found = TextContext.wordAtCaret()
+            let actual = TextContext.wordAtCaret()
             DispatchQueue.main.async {
                 guard let self, gen == self.generation, self.conv == nil else { return }
-                guard let word = found else { NSSound.beep(); return }
-                // Move the caret to the end of the word so the usual backspace-and-retype replacement applies.
-                // A right arrow collapses a selection to its end.
-                let moves = word.caretToWordEnd + (word.selected ? 1 : 0)
-                for _ in 0..<moves { Injector.tap(virtualKey: Engine.rightArrow, mark: self.injectMark) }
-                self.beginConversion(of: word.text, suffix: word.suffix)
+                switch ConversionTarget.choose(tracked: tracked, actual: actual) {
+                case .tracked(let word)?:
+                    self.beginConversion(of: word.word, suffix: word.suffix)
+                case .atCaret(let word)?:
+                    // Move the caret to the end of the word so the usual backspace-and-retype replacement
+                    // applies. A right arrow collapses a selection to its end.
+                    let moves = word.caretToWordEnd + (word.selected ? 1 : 0)
+                    for _ in 0..<moves { Injector.tap(virtualKey: Engine.rightArrow, mark: self.injectMark) }
+                    self.beginConversion(of: word.text, suffix: word.suffix)
+                case nil:
+                    NSSound.beep()
+                }
             }
         }
     }
@@ -284,8 +252,7 @@ final class Engine {
             DispatchQueue.main.async {
                 guard gen == self.generation, self.conv == nil else { return }
                 guard !list.isEmpty else { NSSound.beep(); return }
-                self.buffer = ""
-                self.recent = nil
+                self.words.reset()
                 self.conv = Conversion(original: word, list: list + [word], index: 0, placed: word, suffix: suffix)
                 self.apply(index: 0)
             }
@@ -337,13 +304,14 @@ final class Engine {
             // Picked straight from the always-on candidates.
             guard index < barItems.count else { return }
             let word = barItems[index]
-            learn(typed: buffer, chosen: word)
-            Injector.replace(deleting: buffer.count, with: word, mark: injectMark)
-            endWord(keeping: RecentWord(word: word, suffix: ""))
+            learn(typed: words.typing, chosen: word)
+            Injector.replace(deleting: words.typing.count, with: word, mark: injectMark)
+            words.placed(word)
+            endWord()
         }
         if thenSpace {
             Injector.tap(virtualKey: 49, mark: injectMark)
-            recent?.suffix.append(" ")
+            words.appendToSuffix(" ")
         }
     }
 
@@ -351,7 +319,7 @@ final class Engine {
     private func focusedWord() -> String? {
         if let c = conv { return c.list[c.index] }
         if let first = barItems.first { return first }
-        return buffer.isEmpty ? nil : buffer
+        return words.typing.isEmpty ? nil : words.typing
     }
 
     private func openInDictionary(_ word: String) {
@@ -377,11 +345,7 @@ final class Engine {
         }
         conv = nil
         bar.hide()
-        if c.suffix.isEmpty {
-            buffer = c.original
-        } else {
-            recent = RecentWord(word: c.original, suffix: c.suffix)
-        }
+        if c.suffix.isEmpty { words.resume(c.original) } else { words.placed(c.original, suffix: c.suffix) }
     }
 
     /// Ends the conversion with the current candidate in place. The caret stays right behind it,
@@ -390,8 +354,7 @@ final class Engine {
         guard let c = conv else { return }
         conv = nil
         bar.hide()
-        buffer = ""
-        recent = RecentWord(word: c.placed, suffix: c.suffix)
+        words.placed(c.placed, suffix: c.suffix)
     }
 
     // MARK: - Always-on candidates
@@ -403,7 +366,7 @@ final class Engine {
         generation &+= 1
         guard alwaysShow else { barItems = []; bar.hide(); return }
         let gen = generation
-        let word = buffer
+        let word = words.typing
         guard !word.isEmpty else { barItems = []; bar.hide(); return }
 
         // Show the window from the first letter and keep it while there are no candidates.
@@ -428,21 +391,18 @@ final class Engine {
         }
     }
 
-    /// Stops tracking the word being typed but remembers it as the recent word.
-    private func endWord(keeping word: RecentWord) {
-        buffer = ""
+    /// The word being typed ended (the tracker keeps it as the finished word); clear its candidates.
+    private func endWord() {
         barItems = []
         shownDefinition = nil
         generation &+= 1
-        recent = word
         bar.hide()
     }
 
     /// Forgets everything: the caret has moved somewhere SpellBar cannot follow.
     private func reset() {
         conv = nil
-        buffer = ""
-        recent = nil
+        words.reset()
         barItems = []
         shownDefinition = nil
         generation &+= 1

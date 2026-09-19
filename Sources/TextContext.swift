@@ -8,7 +8,7 @@ import ApplicationServices
 /// API return nil; the caller then gives up.
 enum TextContext {
 
-    struct Word {
+    struct Word: Equatable {
         let text: String
         /// Separators between the end of the word and the caret, such as a space or a comma.
         let suffix: String
