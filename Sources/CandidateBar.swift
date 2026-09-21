@@ -1,4 +1,8 @@
 import Cocoa
+import OSLog
+
+/// Records rare events that explain later misbehaviour. Never records anything typed.
+private let runtimeLog = Logger(subsystem: "local.spellbar", category: "runtime")
 
 /// 候補ウィンドウの描画．
 /// 「変換対象の語（下線付き）| 候補1 候補2 …」を上段に，選択中の候補の語義を下段に出す．
@@ -188,7 +192,8 @@ final class CandidateBar {
     private static let spacesBehavior: NSWindow.CollectionBehavior =
         [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
-    private let panel: NSPanel
+    private var panel: NSPanel
+    private let blur = NSVisualEffectView()
     private let view = BarView()
     private(set) var isVisible = false
     /// Set when the screen layout or the placement mode changes, so the next show re-places the panel.
@@ -197,6 +202,7 @@ final class CandidateBar {
     private var anchor = NSPoint.zero
     private var anchorLimit: CGFloat = 760
     private var fixedWidth: CGFloat?
+    private var lastRebuild = Date.distantPast
 
     private let maxWidth: CGFloat = 760
     private let sideMargin: CGFloat = 80
@@ -211,19 +217,6 @@ final class CandidateBar {
     }
 
     init(onPick: @escaping (Int) -> Void) {
-        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: maxWidth, height: BarView.totalHeight),
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
-        panel.isFloatingPanel = true
-        panel.level = .statusBar
-        panel.hidesOnDeactivate = false
-        panel.isMovable = false
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.collectionBehavior = CandidateBar.spacesBehavior
-
-        let blur = NSVisualEffectView()
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
@@ -231,13 +224,32 @@ final class CandidateBar {
         blur.layer?.cornerRadius = 11
         blur.layer?.masksToBounds = true
         blur.addSubview(view)
-        panel.contentView = blur
 
+        panel = CandidateBar.makePanel()
+        panel.contentView = blur
         view.onPick = onPick
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in self?.needsPlacement = true }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.needsPlacement = true }
+    }
+
+    private static func makePanel() -> NSPanel {
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: BarView.totalHeight),
+                            styleMask: [.borderless, .nonactivatingPanel],
+                            backing: .buffered, defer: false)
+        panel.isFloatingPanel = true
+        panel.level = .statusBar
+        panel.hidesOnDeactivate = false
+        panel.isMovable = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.collectionBehavior = spacesBehavior
+        return panel
     }
 
     /// Registers the panel on every Space again.
@@ -326,7 +338,34 @@ final class CandidateBar {
         view.update(pending: pending, items: candidates, selected: selected, definition: definition)
         resizeToContent()
         panel.orderFrontRegardless()
+        ensureOnActiveSpace()
         isVisible = true
+    }
+
+    /// A window registered on every Space is by definition on the active one. When it is not, the window
+    /// server has dropped that registration, which happens across sleep, and the panel stays on one desktop.
+    /// Registering again normally brings it back; if it does not, the panel is replaced.
+    private func ensureOnActiveSpace() {
+        guard !panel.isOnActiveSpace else { return }
+
+        joinAllSpaces()
+        panel.orderFrontRegardless()
+        if panel.isOnActiveSpace {
+            runtimeLog.notice("candidate window had left the active Space; registered again")
+            return
+        }
+
+        // Rebuilding is the last resort, and rate-limited: a window server that keeps saying no would
+        // otherwise have the panel replaced on every word.
+        guard Date().timeIntervalSince(lastRebuild) > 60 else { return }
+        lastRebuild = Date()
+        let old = panel
+        panel = CandidateBar.makePanel()
+        panel.setFrame(old.frame, display: false)
+        panel.contentView = blur          // moves the view over, leaving the old panel empty
+        old.orderOut(nil)
+        panel.orderFrontRegardless()
+        runtimeLog.notice("candidate window recreated: registering again did not bring it back")
     }
 
     func hide() {

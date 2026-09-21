@@ -1,5 +1,9 @@
 import Cocoa
 import Carbon
+import OSLog
+
+/// Records rare events that explain later misbehaviour. Never records anything typed.
+private let runtimeLog = Logger(subsystem: "local.spellbar", category: "runtime")
 
 /// Watches the keyboard and brings the Japanese IME's "conversion" to English typing.
 ///
@@ -27,7 +31,8 @@ final class Engine {
     private var generation = 0
     /// Marks events SpellBar injects itself, so the tap ignores them.
     private let injectMark: Int64 = 0x5350_4C42  // "SPLB"
-    private var kanaMode = false
+    /// The input source seen on the previous event, to notice a switch between kana and alphanumeric.
+    private var lastInputSource = ""
     /// Drops definition lookups that finish after the selection moved on.
     private var defToken = 0
 
@@ -67,7 +72,7 @@ final class Engine {
 
     init() {
         bar = CandidateBar { [weak self] i in self?.confirm(index: i) }
-        observeInputSource()
+        observeWake()
         observeAppSwitch()
     }
 
@@ -111,8 +116,18 @@ final class Engine {
 
         // Stay out of password fields and other secure input entirely.
         if IsSecureEventInputEnabled() { reset(); return pass }
+
+        // Read the input source on every event rather than caching what a notification said. It costs well
+        // under a microsecond, and the cached value went stale whenever the change notification was coalesced
+        // away, which macOS does for a menu-bar app because it is almost never the active app. SpellBar then
+        // stayed silent after switching back to alphanumeric.
+        let source = Engine.currentInputSource()
+        if source != lastInputSource {
+            lastInputSource = source
+            reset()
+        }
         // While the Japanese IME composes kana, its own candidates take over.
-        if kanaMode { reset(); return pass }
+        if Engine.isKana(source) { reset(); return pass }
 
         if type == .flagsChanged { return handleFlags(event: event) == .swallow ? nil : pass }
         guard type == .keyDown else { return pass }
@@ -411,20 +426,28 @@ final class Engine {
 
     // MARK: - Observers
 
-    private func observeInputSource() {
-        updateKanaMode()
-        DistributedNotificationCenter.default().addObserver(
-            forName: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.updateKanaMode(); self?.reset() }
+    private static func currentInputSource() -> String {
+        guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
+              let ptr = TISGetInputSourceProperty(src, kTISPropertyInputSourceID) else { return "" }
+        return Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
     }
 
-    private func updateKanaMode() {
-        guard let src = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
-              let ptr = TISGetInputSourceProperty(src, kTISPropertyInputSourceID) else { kanaMode = false; return }
-        let id = Unmanaged<CFString>.fromOpaque(ptr).takeUnretainedValue() as String
-        // e.g. com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese (kana) / ….Roman (alphanumeric)
-        kanaMode = id.hasSuffix(".Japanese") || id.contains("Hiragana") || id.contains("Katakana")
+    /// e.g. com.apple.inputmethod.Kotoeri.RomajiTyping.Japanese (kana) / ….Roman (alphanumeric)
+    private static func isKana(_ id: String) -> Bool {
+        id.hasSuffix(".Japanese") || id.contains("Hiragana") || id.contains("Katakana")
+    }
+
+    /// Sleep can leave the event tap disabled without a disable event ever reaching the callback.
+    private func observeWake() {
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, let tap = self.tap else { return }
+            let live = CGEvent.tapIsEnabled(tap: tap)
+            if !live { CGEvent.tapEnable(tap: tap, enable: true) }
+            runtimeLog.notice("wake eventTap=\(live, privacy: .public) reenabled=\(!live, privacy: .public)")
+            self.reset()
+        }
     }
 
     private func observeAppSwitch() {
