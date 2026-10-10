@@ -1,157 +1,115 @@
 # SpellBar
 
-日本語IMEの「変換」を英語入力に持ち込む macOS 常駐アプリ．
-打ってから **右Shift を単押しすると候補が出て，押すたびに次の候補へ切り替わる**．
-Touch Bar の入力候補と同じ `NSSpellChecker` を使っている．
+A small menu bar app that brings the Japanese IME's *conversion* to English typing on macOS.
 
-## 何が違うか
+Type a word, tap **right Shift**, and a candidate window appears; tap again to walk through the candidates, press
+Return to confirm. The candidates come from `NSSpellChecker` — the same engine that fed the Touch Bar's typing
+suggestions — so they are the ones macOS already knows, shown on a Mac that has no Touch Bar.
 
-- **全アプリで動く** — `CGEventTap` でキー入力を直接見ているので，VS Code / Chrome /
-  ターミナルなど AppKit 非対応アプリでも同じように出る
-- **入力ソースを切り替えなくていい** — 日本語IMEの「英数」モードのままで動く．
-  かな入力に切り替わると自動で黙る（変換候補と衝突させない）
-- **候補を複数並べる** — インライン予測のような1択ではない
-- **選んだ結果を覚える** — 確定した「打ち間違い → 選んだ語」を記録し，次から最優先で出す．
-  辞書を自分で育てる必要はなく，普通に使っているだけで自分専用になっていく
-- **語義が出る** — 変換中の候補について，macOS 内蔵辞書の日本語の語義を2行目に表示する．
-  「この単語で合っているか」をその場で確かめられる（Touch Bar では領域が足りずできなかった）
+Because SpellBar reads the keyboard through an event tap, it works in apps that do not use AppKit's text views, where
+the system's own inline prediction and autocorrect never appear: VS Code, Chrome, Electron apps, terminals.
 
-## 権限
+## What it does
 
-初回起動時に2つ必要．どちらもキー入力を読むための権限なので，内容を理解した上で許可すること．
+- **Conversion on a key.** Right Shift converts the word behind the caret. Nothing is replaced until you confirm.
+- **Candidates while you type**, from the first letters, if you prefer them always visible (on by default).
+- **Reconversion.** The word stays reachable after a space, after Backspace, and after you move the caret back to it
+  — by clicking into it, selecting it, or landing in the middle of it.
+- **It learns.** The correction you pick for a misspelling is offered first the next time you make it. No list to
+  maintain by hand.
+- **Meanings.** The selected candidate's dictionary definition appears under the candidates, so you can tell
+  `affect` from `effect`. `⌘D` opens the full entry in Dictionary.app.
+- **Programming words.** `async`, `kwargs`, `kubernetes` and friends are known, alongside the English dictionary.
+- **It stays out of the way.** The window follows the caret like an IME's, keeps its height and left edge steady, and
+  disappears while the Japanese input method is composing kana or while macOS reports secure input.
 
-1. システム設定 → プライバシーとセキュリティ → **アクセシビリティ**
-2. システム設定 → プライバシーとセキュリティ → **入力監視**
+## Keys
 
-許可したらアプリを再起動する．パスワード入力欄など macOS がセキュア入力を有効にしている間は，
-`IsSecureEventInputEnabled()` を見て自動的に停止する．
-
-## 操作
-
-日本語IMEの変換とほぼ同じ流れ．`recieve` と打ってしまったら，そのまま右Shiftを叩く．
-
-| キー | 動作 |
+| Key | Action |
 |---|---|
-| **右Shift 単押し** | 変換する / もう一度押すと次の候補へ |
-| `return` | いまの候補で確定 |
-| `space` | いまの候補で確定して，続けて空白を入れる |
-| `esc` | 元の綴りに戻す |
-| `↓` `tab` / `↑` | 次の候補 / 前の候補 |
-| `⌘1`〜`⌘5` | その候補で直接確定 |
-| `⌘D` | いま当たっている語を辞書アプリで引く |
-| 上記以外のキー | いまの候補で確定して，そのキーはそのまま入力される |
+| **Right Shift** (tapped alone) | Convert the word behind the caret, or move to the next candidate |
+| `return` | Confirm |
+| `space` | Confirm and type a space |
+| `esc` | Put the original spelling back |
+| `↓` / `tab`, `↑` | Next, previous candidate |
+| `⌘1`–`⌘5` | Confirm that candidate directly |
+| `⌘D` | Open the word in Dictionary.app |
 
-候補リストの末尾には元の綴りが入っているので，押し続ければ一周して元に戻る．
+Right Shift counts as the conversion key only when it is pressed and released with no other key in between, so
+`Shift`+letter is unaffected and the key still reaches the app.
 
-### 再変換
+## Requirements
 
-確定したあとでも，**単語の後ろにカーソルがある状態で右Shiftを押せば，その単語をもう一度変換できる**．
+macOS 13 or later, Apple silicon or Intel. Developed and used on macOS 26.
 
-| 状況 | 動作 |
-|---|---|
-| `recieve ` とスペースまで打った直後 | 右Shift でスペースを保ったまま `recieve` を変換する |
-| スペースの後で Backspace | 直前の単語に戻り，打ちかけの単語として扱う |
-| 変換確定の直後に文字を打つ | 単語の続きとして扱う（`receive` + `d` → `received`） |
-| クリックや矢印キーで単語に移動 | 右Shift でその単語を変換する．単語の途中でも，選択していてもよい |
+The menu and the dictionary definitions are in Japanese at the moment; an English interface is planned.
 
-単語と後ろの区切り（スペースや句読点）は3文字までつながっているとみなす．改行はまたがない．
-カーソルを動かした後の再変換は，アクセシビリティ API で入力欄の文字を読んで単語を探すので，
-文字を返さないアプリでは効かない（そのときはビープが鳴る）．
+## Install
 
-「右Shift 単押し」は，押してから離すまでに他のキーが挟まらなかった場合だけ変換キーとして扱う．
-`Shift+A` のような通常の使い方とは競合しない．Shift自体は握りつぶさずアプリへ渡している．
+Download the zip from [Releases](../../releases), unzip it, and move `SpellBar.app` to `/Applications` or
+`~/Applications`.
 
-空白・記号・改行・矢印キー・クリック・アプリ切り替えで単語の区切りとみなす．
-**「変換キーを使わず常に候補を表示」は既定でオン**．1文字目から枠が出て，2文字目から候補が入る．
-候補が無い語でも枠は引っ込めない．変換キーと併用でき，煩わしければメニューから切れる．
+The app is signed but **not notarized**, so the first launch is blocked. Open it once, then go to **System Settings →
+Privacy & Security**, find the message about SpellBar near the bottom, and choose **Open Anyway**.
 
-## 候補の出どころ
+Then grant two permissions in **System Settings → Privacy & Security** and restart the app:
 
-Touch Bar と同じ `NSSpellChecker` を使い，以下の順に混ぜて最大5件．
+- **Accessibility**
+- **Input Monitoring**
 
-1. プログラミング用語の前方一致 — `asyn` → `async`, `asyncio`
-2. 英単語の前方一致補完 — `definit` → `definitely`, `definition`
-3. 綴りが崩れた用語の救済（編集距離2まで）— `kubernets` → `kubernetes`
-4. スペル修正 — `thier` → `their`
+Both are explained in [PRIVACY.md](PRIVACY.md). If SpellBar's icon shows a warning triangle, one of them is missing.
 
-綴りが正しい単語には 3 と 4 を出さない（`hello` に `cello` が並ぶのを防ぐ）．
+### Upgrading from a build older than 1.1.0
 
-## 覚えたことを見る・消す
+The bundle identifier changed in 1.1.0, so macOS treats the app as new: grant the two permissions again, and remove
+the old `SpellBar` entries in Accessibility and Input Monitoring with the `−` button. Your settings and learned words
+are carried over automatically. If an old SpellBar login item lingers in **System Settings → General → Login Items**,
+remove it there.
 
-確定した対応は `~/.config/spellbar/learned.json` に貯まる．消せば忘れる．
+## Settings
 
-```
-cat ~/.config/spellbar/learned.json
-rm ~/.config/spellbar/learned.json
-```
+Everything is in the menu bar item: enable or disable, always-on candidates, start at login, and where the candidate
+window goes (follow the caret, always at the bottom, always at the top). The position submenu also has a debug
+readout that shows how the caret position was obtained, for apps where following it fails.
 
-## 自動起動
+Add your own words — project names, APIs, anything the dictionary lacks — one per line:
 
-初回起動時にログイン項目へ自動で登録される．メニューバーの「ログイン時に自動起動」で切り替えられ，
-システム設定 → 一般 → ログイン項目 からも確認できる．
-
-## 用語を足す
-
-`~/.config/spellbar/terms.txt` に1行1語．`#` 始まりはコメント．組み込みの種辞書に追加される．
-
-```
+```sh
 mkdir -p ~/.config/spellbar
 echo "kubectl" >> ~/.config/spellbar/terms.txt
 ```
 
-## ビルド
+What SpellBar has learned lives in `~/.config/spellbar/learned.json`. Delete the file to forget it.
 
-```
+## Build
+
+No Xcode project, no dependencies: one script compiles the sources with `swiftc` and assembles the bundle.
+
+```sh
 ./build.sh
 ```
 
-候補生成だけを権限なしで確認する:
+The self-test runs the candidate engine, the word tracking and the reconversion rules without needing any permission:
 
-```
+```sh
 ./SpellBar.app/Contents/MacOS/SpellBar --selftest
 ```
 
-## 候補ウィンドウの位置
+`build.sh` signs with a self-signed certificate when it is in the keychain and falls back to ad-hoc signing with a
+warning. [docs/code-signing.md](docs/code-signing.md) explains why that matters: with ad-hoc signing macOS forgets
+the two permissions on every rebuild.
 
-日本語IMEの候補ウィンドウと同じく，**入力位置のすぐ下**に出す．下に入らなければ上に出す．
-横はキャレットの少し左に左端を合わせる．
+## Privacy
 
-位置を決めるのは**単語を打ち始めたときと，画面が変わったときだけ**．同じ単語のあいだは動かさない．
-幅は中身に合わせて変わるが，**左端は固定して右へだけ伸ばす**ので，並んでいるチップは動かない．
-高さは語義の有無にかかわらず一定（語義の行は内容が無くても場所を空けておく）．
+SpellBar has no network code at all, and nothing you type is sent anywhere. It reads the keyboard, which is a serious
+permission to hand out — which is why the source is here to read. See [PRIVACY.md](PRIVACY.md).
 
-キャレットの座標はアクセシビリティ API で取る．取れないアプリでは入力欄そのものの矩形で代用し，
-それも取れなければ画面の下に出す．メニューバーの「候補ウィンドウの位置」から，
-追従をやめて常に上／常に下に固定することもできる．
+## Licence
 
-### うまく追従しないとき
+MIT, Copyright (c) 2026 Kosuke Satake. See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md); SpellBar bundles
+no third-party code.
 
-同じメニューの「位置の判定結果を表示（デバッグ）」を入れると，語義の行に判定結果が出る．
+Issues are welcome. Code contributions are not accepted at the moment, to keep the copyright with one holder.
 
-- `キャレット x1200 y340 (キャレットから取得)` … 正しく取れている
-- `入力欄の矩形から取得（キャレット非対応）` … 大まかな位置しか取れていない
-- `フォーカスされた要素を取得できない` / `このアプリは位置を返さない` … そのアプリが未対応
-
-## 下線について
-
-日本語IMEの「未確定文字列の下線」は，**アプリ側が描いている**もの．イベントタップは他アプリの
-テキストフィールドの中に描画できないため，同じことはできない．本物の下線を出すには
-InputMethodKit で本物の入力ソースを作る必要があるが，それは Kotoeri の英数モードを置き換える
-ことになり，`\` の入力と日本語入力の前提が崩れる．
-
-そのため下線は**候補ウィンドウ側に持たせている**．変換対象の語を下線付きで左端に表示し，
-区切り線を挟んで候補を並べる．日本語IMEの候補ウィンドウに近い見た目になる．
-
-なお変換中は，選んだ候補が実際にその場のテキストへ書き込まれる（日本語IMEと同じ挙動）．
-確定しなくても画面上の文字は候補に置き換わっていくので，下線が無くても結果は目で見て確認できる．
-
-## 既知の制限
-
-- 候補ウィンドウは常に画面下部中央に出る．カーソル位置への追従は未実装
-- ad-hoc 署名のため，ビルドし直すと TCC の許可がリセットされて再許可が必要になる
-  （署名の要求条件をバンドルIDだけにすれば回避できるが，同じIDを名乗る別のバイナリが
-  入力監視の権限を継承できてしまうため採用していない）
-- 語義は macOS 内蔵辞書を引いているので，プログラミング用語のように辞書に無い語では出ない
-  （`⌘D` で辞書アプリを開けば，そちらの全文は読める）
-- 候補が固定幅に収まらない場合は，はみ出す候補を描かない
-- 打ち直しは Backspace + 文字送出で行うので，極端に入力処理が遅いアプリでは取りこぼす可能性がある
+This app was built with the help of Claude (Anthropic) through Claude Code; design, review and testing are by Kosuke
+Satake. Anthropic does not endorse this app.

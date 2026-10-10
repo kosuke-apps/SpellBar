@@ -1,3 +1,4 @@
 SpellBar.app/
 dist/
 .DS_Store
+.label.toml
