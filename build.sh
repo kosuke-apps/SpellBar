@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 APP="SpellBar.app"
-BUNDLE_ID="local.spellbar"
+BUNDLE_ID="dev.kosuke.SpellBar"
 # The one certificate shared by every Mac Utilities app. See docs/code-signing.md.
 SIGNING_IDENTITY_NAME="Mac Utilities Code Signing"
 rm -rf "$APP"
@@ -24,7 +24,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>2</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
-  <key>NSHumanReadableCopyright</key><string></string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Kosuke Satake. MIT License.</string>
 </dict>
 </plist>
 PLIST

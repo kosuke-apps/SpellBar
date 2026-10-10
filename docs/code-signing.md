@@ -11,9 +11,9 @@ rule that says which code counts as "this app".
 | Signed with | Designated requirement | After a rebuild |
 |---|---|---|
 | ad-hoc (`codesign -s -`) | `cdhash H"…"`, the hash of this exact binary | permissions are gone |
-| the shared certificate | `identifier "local.spellbar" and certificate …` | permissions stay |
+| the shared certificate | `identifier "dev.kosuke.SpellBar" and certificate …` | permissions stay |
 
-The requirement is never reduced to the bundle identifier alone: any binary claiming `local.spellbar` would then
+The requirement is never reduced to the bundle identifier alone: any binary claiming `dev.kosuke.SpellBar` would then
 inherit Input Monitoring silently.
 
 ## Creating the certificate (once, for all apps)
@@ -46,6 +46,6 @@ ad-hoc and warns; with several it stops. The first signing asks for keychain acc
 
 ```sh
 security find-identity -p codesigning          # the certificate is listed
-codesign -d -r- SpellBar.app                   # designated => identifier "local.spellbar" and certificate …
-/usr/bin/log show --last 5m --predicate 'subsystem == "local.spellbar"'   # accessibility=true inputMonitoring=true after launch
+codesign -d -r- SpellBar.app                   # designated => identifier "dev.kosuke.SpellBar" and certificate …
+/usr/bin/log show --last 5m --predicate 'subsystem == "dev.kosuke.SpellBar"'   # accessibility=true inputMonitoring=true after launch
 ```

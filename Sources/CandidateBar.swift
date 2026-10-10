@@ -1,8 +1,4 @@
 import Cocoa
-import OSLog
-
-/// Records rare events that explain later misbehaviour. Never records anything typed.
-private let runtimeLog = Logger(subsystem: "local.spellbar", category: "runtime")
 
 /// 候補ウィンドウの描画．
 /// 「変換対象の語（下線付き）| 候補1 候補2 …」を上段に，選択中の候補の語義を下段に出す．
@@ -351,7 +347,7 @@ final class CandidateBar {
         joinAllSpaces()
         panel.orderFrontRegardless()
         if panel.isOnActiveSpace {
-            runtimeLog.notice("candidate window had left the active Space; registered again")
+            Log.runtime.notice("candidate window had left the active Space; registered again")
             return
         }
 
@@ -365,7 +361,7 @@ final class CandidateBar {
         panel.contentView = blur          // moves the view over, leaving the old panel empty
         old.orderOut(nil)
         panel.orderFrontRegardless()
-        runtimeLog.notice("candidate window recreated: registering again did not bring it back")
+        Log.runtime.notice("candidate window recreated: registering again did not bring it back")
     }
 
     func hide() {

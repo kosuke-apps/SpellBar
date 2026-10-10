@@ -1,9 +1,5 @@
 import Cocoa
 import Carbon
-import OSLog
-
-/// Records rare events that explain later misbehaviour. Never records anything typed.
-private let runtimeLog = Logger(subsystem: "local.spellbar", category: "runtime")
 
 /// Watches the keyboard and brings the Japanese IME's "conversion" to English typing.
 ///
@@ -445,7 +441,7 @@ final class Engine {
             guard let self, let tap = self.tap else { return }
             let live = CGEvent.tapIsEnabled(tap: tap)
             if !live { CGEvent.tapEnable(tap: tap, enable: true) }
-            runtimeLog.notice("wake eventTap=\(live, privacy: .public) reenabled=\(!live, privacy: .public)")
+            Log.runtime.notice("wake eventTap=\(live, privacy: .public) reenabled=\(!live, privacy: .public)")
             self.reset()
         }
     }

@@ -1,10 +1,5 @@
 import Cocoa
-import OSLog
 import ServiceManagement
-
-/// Records permission state at launch, to check from Terminal that permissions survived an update:
-/// `/usr/bin/log show --last 5m --predicate 'subsystem == "local.spellbar"'`. Never logs anything typed.
-private let launchLog = Logger(subsystem: "local.spellbar", category: "launch")
 
 /// メニューバー常駐のみ．Dock アイコンは出さない (Info.plist の LSUIElement)．
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = Engine()
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        migrateSettingsFromPreviousIdentifier()
         enableLoginItemOnFirstLaunch()
         setupStatusItem()
 
@@ -22,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let tapStarted = engine.start()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        launchLog.notice("""
+        Log.launch.notice("""
             launch build=\(version, privacy: .public) accessibility=\(trusted, privacy: .public) \
             inputMonitoring=\(CGPreflightListenEventAccess(), privacy: .public) eventTap=\(tapStarted, privacy: .public)
             """)
@@ -39,13 +35,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 初回起動時だけ自動起動を有効にする．
-    /// 以後はメニューの切り替えを尊重し，勝手に登録し直さない．
+    private static let loginItemKey = "didSetUpLoginItem"
+    /// The identifier used before the app was published, as `local.spellbar`.
+    private static let previousBundleIdentifier = "local.spellbar"
+
+    /// Enables starting at login, on the first launch only.
+    /// After that the menu item decides; never register again behind the user's back.
     private func enableLoginItemOnFirstLaunch() {
-        let key = "didSetUpLoginItem"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: AppDelegate.loginItemKey) else { return }
+        defaults.set(true, forKey: AppDelegate.loginItemKey)
         try? SMAppService.mainApp.register()
+    }
+
+    /// Carries the settings across the one change of bundle identifier.
+    ///
+    /// macOS keys preferences by bundle identifier, so the new one starts with an empty domain. The login item
+    /// is keyed the same way, and its old registration cannot be reached from here, so it is made again under
+    /// the new identifier. The learned words live at a fixed path and are untouched.
+    private func migrateSettingsFromPreviousIdentifier() {
+        let defaults = UserDefaults.standard
+        let migratedKey = "didMigrateFromPreviousBundleIdentifier"
+        guard !defaults.bool(forKey: migratedKey) else { return }
+        defaults.set(true, forKey: migratedKey)
+
+        guard let previous = defaults.persistentDomain(forName: AppDelegate.previousBundleIdentifier),
+              !previous.isEmpty else { return }
+        for (key, value) in previous where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+        if defaults.bool(forKey: AppDelegate.loginItemKey) {
+            try? SMAppService.mainApp.register()
+        }
+        Log.launch.notice("carried \(previous.count, privacy: .public) settings over from the previous bundle identifier")
     }
 
     private func setupStatusItem() {
