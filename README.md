@@ -46,8 +46,14 @@ The menu and the dictionary definitions are in Japanese at the moment; an Englis
 
 ## Install
 
-Download the zip from [Releases](../../releases), unzip it, and move `SpellBar.app` to `/Applications` or
-`~/Applications`.
+Download `SpellBar-1.1.0.dmg` from [Releases](../../releases), open it, and drag **SpellBar** onto the
+**Applications** folder in the same window.
+
+If you want to check the download first, compare it with the `.sha256` file published beside it:
+
+```sh
+shasum -a 256 ~/Downloads/SpellBar-1.1.0.dmg
+```
 
 The app is signed but **not notarized**, so the first launch is blocked. Open it once, then go to **System Settings →
 Privacy & Security**, find the message about SpellBar near the bottom, and choose **Open Anyway**.

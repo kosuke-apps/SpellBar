@@ -65,8 +65,16 @@ shared certificate, are in `docs/code-signing.md`.
 ## Release
 
 Tags are `vX.Y.Z`, annotated, with a message saying what changed. Version numbers live in the Info.plist inside
-`build.sh`. Releases are zips made with `ditto -c -k --keepParent SpellBar.app SpellBar-X.Y.Z.zip`, signed but not
-notarized. Push only `main` and tags.
+`build.sh`. Push only `main` and tags.
+
+A release is a `.dmg` holding the signed app and a link to `/Applications`, with its SHA-256 beside it. It is signed
+but not notarized, so the first launch needs Open Anyway. Build it from the same bundle the user tested:
+
+```sh
+mkdir -p dist/stage && cp -R SpellBar.app dist/stage/ && ln -s /Applications dist/stage/Applications
+hdiutil create -volname SpellBar -srcfolder dist/stage -ov -format UDZO dist/SpellBar-X.Y.Z.dmg
+shasum -a 256 dist/SpellBar-X.Y.Z.dmg > dist/SpellBar-X.Y.Z.dmg.sha256
+```
 
 ## Still to do
 
