@@ -40,6 +40,13 @@ Do not undo these without reading why.
 
 - **Never block the tap callback.** It runs on the main run loop. Candidate lookups go to `CandidateEngine.queue`,
   accessibility queries to `Engine.axQueue`.
+- **Never ask another app anything on the main thread.** `CandidateBar` finds the caret on
+  `CaretLocator.queue` and shows the window when the answer arrives. A slow app on the main thread stalls the event
+  tap, and with it every key typed anywhere.
+- **Believe a caret position only when it is plausible.** `CaretLocator` accepts the caret rectangle if it is about
+  one line high and not at the screen's corner, and an input field's frame only if its role is a text input and it
+  is not document-sized. A remote desktop window reports its whole frame, which once pinned the window to the top
+  left corner. With no believable position the window sits at the bottom.
 - **Do not cache the input source.** macOS coalesces distributed notifications for a menu bar app, which is almost
   never active, so a cached "kana mode" went stale and the app fell silent. Reading it per event costs 0.4 µs.
 - **Re-register the panel on every Space each time it is shown.** The window server drops that registration across

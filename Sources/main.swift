@@ -2,10 +2,11 @@ import Cocoa
 import ServiceManagement
 
 /// Lives in the menu bar only: no Dock icon (`LSUIElement` in Info.plist).
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem!
     private let engine = Engine()
+    private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ n: Notification) {
         migrateSettingsFromPreviousIdentifier()
@@ -75,6 +76,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyStatusIcon()
 
         let menu = NSMenu()
+        menu.delegate = self
+
+        statusLine.isEnabled = false
+        menu.addItem(statusLine)
+        menu.addItem(.separator())
 
         let toggle = NSMenuItem(title: String(localized: "Enable SpellBar"), action: #selector(toggleEnabled(_:)), keyEquivalent: "")
         toggle.target = self
@@ -167,6 +173,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.image = AppDelegate.statusIcon
         button.title = ""
         button.appearsDisabled = !engine.enabled
+    }
+
+    /// The status line is read when the menu opens, so it describes the moment the user looked.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu === statusItem.menu else { return }
+        switch engine.status {
+        case .listening:
+            statusLine.title = String(localized: "Status: listening")
+        case .turnedOff:
+            statusLine.title = String(localized: "Status: turned off in this menu")
+        case .needsPermission:
+            statusLine.title = String(localized: "Status: needs Accessibility and Input Monitoring")
+        case .monitorOff:
+            statusLine.title = String(localized: "Status: paused, macOS turned the keyboard monitor off")
+        case .secureInput(let holder?):
+            statusLine.title = String(format: String(localized: "Status: paused, secure input is on (held by %@)"), holder)
+        case .secureInput(nil):
+            statusLine.title = String(localized: "Status: paused, secure input is on")
+        case .kana:
+            statusLine.title = String(localized: "Status: paused while the Japanese input is typing kana")
+        }
     }
 
     @objc private func toggleEnabled(_ item: NSMenuItem) {
@@ -390,6 +417,43 @@ if CommandLine.arguments.contains("--selftest") {
             print("\(ok ? "ok  " : "FAIL") \(lang) \(key.padding(toLength: 16, withPad: " ", startingAt: 0)) -> \(got)")
         }
         print(localeFailures == 0 ? "all \(localeChecks.count) passed" : "\(localeFailures) FAILED")
+
+        print("\n--- which positions an app reports are believed ---")
+        // Accessibility coordinates: origin at the top left of the main display.
+        func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect { CGRect(x: x, y: y, width: w, height: h) }
+        let believed: [(String, Bool, Bool)] = [
+            ("caret in a text field",
+             CaretLocator.isPlausibleCaret(r(500, 300, 2, 18)), true),
+            ("caret at the screen's corner (no real answer)",
+             CaretLocator.isPlausibleCaret(r(0, 0, 0, 16)), false),
+            ("caret with no height",
+             CaretLocator.isPlausibleCaret(r(500, 300, 2, 0)), false),
+            ("'caret' as tall as a page of text",
+             CaretLocator.isPlausibleCaret(r(500, 300, 600, 800)), false),
+            ("caret that is not a number",
+             CaretLocator.isPlausibleCaret(r(.nan, 300, 2, 18)), false),
+            ("text field of normal size",
+             CaretLocator.isPlausibleField(role: "AXTextField", frame: r(100, 200, 300, 24)), true),
+            ("search field",
+             CaretLocator.isPlausibleField(role: "AXSearchField", frame: r(100, 40, 200, 28)), true),
+            ("remote desktop: the whole window",
+             CaretLocator.isPlausibleField(role: "AXWindow", frame: r(0, 25, 1512, 957)), false),
+            ("remote desktop: a group filling the screen",
+             CaretLocator.isPlausibleField(role: "AXGroup", frame: r(0, 0, 1512, 982)), false),
+            ("web page that exposes only its web area",
+             CaretLocator.isPlausibleField(role: "AXWebArea", frame: r(0, 90, 1440, 800)), false),
+            ("a document-sized text area",
+             CaretLocator.isPlausibleField(role: "AXTextArea", frame: r(100, 100, 700, 900)), false),
+            ("no role at all",
+             CaretLocator.isPlausibleField(role: nil, frame: r(100, 200, 300, 24)), false),
+        ]
+        var believedFailures = 0
+        for (label, got, expected) in believed {
+            let ok = got == expected
+            if !ok { believedFailures += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(label.padding(toLength: 48, withPad: " ", startingAt: 0)) -> \(got ? "believed" : "refused")")
+        }
+        print(believedFailures == 0 ? "all \(believed.count) passed" : "\(believedFailures) FAILED")
         // Which language the app itself picks in this run, e.g. with `-AppleLanguages "(ja)"` on the command line.
         print("language chosen for this run: \(Bundle.main.preferredLocalizations.first ?? "?")"
               + " (\(String(localized: "Quit SpellBar")))")

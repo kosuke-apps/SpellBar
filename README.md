@@ -78,6 +78,29 @@ the old `SpellBar` entries in Accessibility and Input Monitoring with the `−` 
 are carried over automatically. If an old SpellBar login item lingers in **System Settings → General → Login Items**,
 remove it there.
 
+## When it does nothing
+
+Open the SpellBar menu: its **first line says why it is not reacting right now** — turned off, missing a permission,
+the Japanese input is typing kana, or macOS has secure input on (and which app switched it on).
+
+Secure input deserves a word. While any app has it on, macOS hides every keystroke from every other app, SpellBar
+included. Password fields switch it on; some apps forget to switch it off again. Nothing SpellBar can do gets
+around it, but the menu names the app, and quitting that app or leaving its password field clears it.
+
+## Known limits
+
+SpellBar sees every key you type, but it can only place its window and read the text around the caret where an app
+answers accessibility questions.
+
+- **Remote desktop, virtual machines and editors that draw their own text** report no caret position. The window
+  stays at the bottom of the screen (or the top, if you chose that) instead of following the caret, and reconverting
+  a word after moving the caret does not work.
+- **Web pages.** Chromium-based browsers and Electron apps may not expose a page's text fields to accessibility
+  unless they are told an assistive tool is running; where they do not, the window stays at the bottom. Editors that
+  draw their own text, Google Docs among them, may also not accept the keys SpellBar types to replace a word. That
+  has not been verified.
+- **Secure input**, as above.
+
 ## Settings
 
 Everything is in the menu bar item: enable or disable, always-on candidates, start at login, and where the candidate

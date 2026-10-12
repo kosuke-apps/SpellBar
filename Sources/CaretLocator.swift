@@ -1,23 +1,62 @@
 import Cocoa
 import ApplicationServices
 
-/// Returns the caret position of the focused text input in screen coordinates (origin at the bottom left).
+/// Finds the caret position of the focused text input.
 ///
-/// It asks another process through the accessibility API, so a short timeout keeps an unresponsive app
-/// from freezing SpellBar. Many apps do not support it, so where a lookup failed is kept in `lastNote`.
+/// It asks another process through the accessibility API, which can be slow or never answer, so it must only run
+/// on `CaretLocator.queue`, never on the main thread: a main thread waiting on another app is a main thread that
+/// cannot run the event tap, and every key typed anywhere stalls with it.
+///
+/// Many apps give no usable answer: remote desktop and virtual machine windows, canvas-drawn editors, web pages
+/// whose accessibility is off. A wrong answer is worse than none, because it puts the candidate window in a
+/// place that has nothing to do with the caret, so every answer is checked and refused when it is not plausible.
 enum CaretLocator {
 
     struct Hit {
+        /// In accessibility coordinates: origin at the top left of the main display, y pointing down.
+        /// Convert it with `toScreenCoordinates` on the main thread.
         let rect: CGRect
         let source: String      // "caret" or "input field"
     }
 
-    private static let timeout: Float = 0.08
-    /// The outcome of the last lookup, for the debug readout that tells apps where following the caret fails.
-    private(set) static var lastNote = String(localized: "Not read yet")
+    /// The outcome of one lookup, with a line saying how it came about for the debug readout.
+    struct Lookup {
+        let hit: Hit?
+        let note: String
+    }
 
-    /// Lets callers record why they rejected a result, for the debug readout.
-    static func note(_ text: String) { lastNote = text }
+    /// Where lookups run. One queue, so a stuck app delays only the next lookup, not typing.
+    static let queue = DispatchQueue(label: "spellbar.caret", qos: .userInteractive)
+
+    private static let timeout: Float = 0.05
+    /// All the lookups of one word must fit in this, however many attributes are asked for.
+    private static let budget: TimeInterval = 0.12
+
+    /// Roles of the elements people type into. Anything else (a window, a table, a web area) is not an input,
+    /// however it is sized.
+    private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
+    /// A caret is about one line high; taller means the range was a whole block of text.
+    private static let maxCaretHeight: CGFloat = 120
+    /// An input field this tall is a document, not a place to hang a candidate window under.
+    private static let maxFieldHeight: CGFloat = 300
+
+    // MARK: Plausibility (pure, so the self-test can run it)
+
+    /// A caret rectangle in accessibility coordinates (origin top left) that can be believed.
+    static func isPlausibleCaret(_ r: CGRect) -> Bool {
+        guard r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite else { return false }
+        guard r.width >= 0, r.height > 0, r.height <= maxCaretHeight else { return false }
+        // Apps with no real answer often return a rectangle at the screen's corner.
+        return !(r.origin.x == 0 && r.origin.y == 0)
+    }
+
+    /// The frame of an element that can stand in for the caret.
+    static func isPlausibleField(role: String?, frame r: CGRect) -> Bool {
+        guard let role, textRoles.contains(role) else { return false }
+        return r.width > 0 && r.height > 0 && r.height <= maxFieldHeight && !(r.origin.x == 0 && r.origin.y == 0)
+    }
+
+    // MARK: Lookups
 
     /// The focused text input of the frontmost app, with a short messaging timeout applied.
     static func focusedElement() -> AXUIElement? {
@@ -37,32 +76,41 @@ enum CaretLocator {
         return range
     }
 
-    static func caret() -> Hit? {
+    /// Call this on `queue`.
+    static func caret() -> Lookup {
+        let start = Date()
+        func overBudget() -> Bool { Date().timeIntervalSince(start) > budget }
+
         guard let element = focusedElement() else {
-            lastNote = String(localized: "Couldn't get the focused element")
-            return nil
+            return Lookup(hit: nil, note: String(localized: "Couldn't get the focused element"))
+        }
+        let role = copy(element, kAXRoleAttribute) as? String
+
+        if !overBudget(), let rect = caretBounds(of: element, until: { overBudget() }), isPlausibleCaret(rect) {
+            return Lookup(hit: Hit(rect: rect, source: String(localized: "caret")),
+                          note: String(localized: "From the caret"))
+        }
+        if !overBudget(), let rect = elementBounds(of: element), isPlausibleField(role: role, frame: rect) {
+            return Lookup(hit: Hit(rect: rect, source: String(localized: "input field")),
+                          note: String(localized: "From the input field's rectangle (caret not supported)"))
         }
 
-        if let rect = caretBounds(of: element), rect.height > 0 {
-            lastNote = String(localized: "From the caret")
-            return Hit(rect: flip(rect), source: String(localized: "caret"))
-        }
-        if let rect = elementBounds(of: element), rect.height > 0 {
-            lastNote = String(localized: "From the input field's rectangle (caret not supported)")
-            return Hit(rect: flip(rect), source: String(localized: "input field"))
-        }
-        lastNote = String(localized: "This app doesn't report a position")
-        return nil
+        // Say what the app did give, which is what tells one kind of app from another.
+        let detail = [role ?? "?", elementBounds(of: element).map { "\(Int($0.width))×\(Int($0.height))" }]
+            .compactMap { $0 }.joined(separator: " ")
+        return Lookup(hit: nil,
+                      note: String(format: String(localized: "This app doesn't report a usable position (%@)"), detail))
     }
 
     /// The rectangle of the selection (the caret). It is the most accurate thing to get.
-    private static func caretBounds(of element: AXUIElement) -> CGRect? {
+    private static func caretBounds(of element: AXUIElement, until stop: () -> Bool) -> CGRect? {
         guard let range = selectedRange(of: element) else { return nil }
 
         // Some apps return no rectangle for a zero-length range, so ask for at least one character.
         // With the caret at the start of a line, also try the character before it.
         for query in [CFRange(location: range.location, length: max(range.length, 1)),
                       CFRange(location: max(range.location - 1, 0), length: 1)] {
+            if stop() { return nil }
             var q = query
             guard let param = AXValueCreate(.cfRange, &q) else { continue }
             var out: CFTypeRef?
@@ -70,12 +118,12 @@ enum CaretLocator {
                     element, kAXBoundsForRangeParameterizedAttribute as CFString, param, &out) == .success,
                   let value = out else { continue }
             var rect = CGRect.zero
-            if AXValueGetValue(value as! AXValue, .cgRect, &rect), rect.height > 0 { return rect }
+            if AXValueGetValue(value as! AXValue, .cgRect, &rect), isPlausibleCaret(rect) { return rect }
         }
         return nil
     }
 
-    /// When the caret cannot be had, the rectangle of the input field itself stands in.
+    /// The frame of the input field itself.
     private static func elementBounds(of element: AXUIElement) -> CGRect? {
         guard let posValue = copy(element, kAXPositionAttribute),
               let sizeValue = copy(element, kAXSizeAttribute) else { return nil }
@@ -91,9 +139,9 @@ enum CaretLocator {
         return out
     }
 
-    /// The accessibility API puts the origin at the top left of the main display with y pointing down.
-    /// AppKit's origin is the bottom left, so flip it. The main display is the screen whose origin is (0,0).
-    private static func flip(_ rect: CGRect) -> CGRect {
+    /// AppKit's origin is the bottom left, so flip an accessibility rectangle. The main display is the screen
+    /// whose origin is (0,0). Call this on the main thread, where `NSScreen` may be read.
+    static func toScreenCoordinates(_ rect: CGRect) -> CGRect {
         let primary = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first
         let height = primary?.frame.height ?? 0
         return CGRect(x: rect.origin.x, y: height - rect.origin.y - rect.height,

@@ -41,6 +41,48 @@ final class Engine {
         set { bar.placement = newValue }
     }
 
+    /// Why SpellBar is or is not reacting to the keyboard right now. The menu shows it, so that "it does nothing
+    /// in this app" can be told apart: macOS refusing to show keystrokes, the kana input source, or something else.
+    enum Status: Equatable {
+        case listening
+        case turnedOff
+        case needsPermission
+        case monitorOff
+        case secureInput(heldBy: String?)
+        case kana
+    }
+
+    var status: Status {
+        if !enabled { return .turnedOff }
+        guard let tap else { return .needsPermission }
+        if !CGEvent.tapIsEnabled(tap: tap) { return .monitorOff }
+        if IsSecureEventInputEnabled() { return .secureInput(heldBy: Engine.secureInputHolder()) }
+        if Engine.isKana(Engine.currentInputSource()) { return .kana }
+        return .listening
+    }
+
+    /// The app that has switched on secure input, which makes macOS hide every keystroke from event taps, in
+    /// every app, until it switches it off again. Browsers do it for password fields and sometimes forget to stop.
+    private static func secureInputHolder() -> String? {
+        guard let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+              let pid = (session["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
+    }
+
+    /// Why keys are being ignored: 0 for not ignored, 1 for secure input, 2 for kana input. Kept so that a
+    /// change is logged once instead of once per keystroke.
+    private var silenceKind = 0
+
+    private func noteSilence(_ kind: Int) {
+        guard kind != silenceKind else { return }
+        silenceKind = kind
+        switch kind {
+        case 1: Log.runtime.notice("not listening: secure input is on, held by \(Engine.secureInputHolder() ?? "an unknown process", privacy: .public)")
+        case 2: Log.runtime.notice("not listening: Japanese kana input is active")
+        default: Log.runtime.notice("listening again")
+        }
+    }
+
     /// Shows the placement diagnosis in the candidate window, to find apps where following the caret fails.
     var debugPlacement: Bool {
         get { bar.debug }
@@ -111,7 +153,7 @@ final class Engine {
         if type == .leftMouseDown { keyPressedWhileShift = true; reset(); return pass }
 
         // Stay out of password fields and other secure input entirely.
-        if IsSecureEventInputEnabled() { reset(); return pass }
+        if IsSecureEventInputEnabled() { noteSilence(1); reset(); return pass }
 
         // Read the input source on every event rather than caching what a notification said. It costs well
         // under a microsecond, and the cached value went stale whenever the change notification was coalesced
@@ -123,7 +165,8 @@ final class Engine {
             reset()
         }
         // While the Japanese IME composes kana, its own candidates take over.
-        if Engine.isKana(source) { reset(); return pass }
+        if Engine.isKana(source) { noteSilence(2); reset(); return pass }
+        noteSilence(0)
 
         if type == .flagsChanged { return handleFlags(event: event) == .swallow ? nil : pass }
         guard type == .keyDown else { return pass }

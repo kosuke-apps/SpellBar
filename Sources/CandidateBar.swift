@@ -194,6 +194,18 @@ final class CandidateBar {
     private(set) var isVisible = false
     /// Set when the screen layout or the placement mode changes, so the next show re-places the panel.
     private var needsPlacement = true
+
+    /// What is to be shown, while the caret position is still being looked up.
+    private struct Content {
+        let pending: String?
+        let candidates: [String]
+        let selected: Int?
+        let definition: String?
+    }
+    private var latest: Content?
+    private var lookingUp = false
+    /// Bumped by `hide`, so a lookup that finishes after the window was dismissed is dropped.
+    private var lookupToken = 0
     private var placedAtTop = false
     private var anchor = NSPoint.zero
     private var anchorLimit: CGFloat = 760
@@ -260,18 +272,24 @@ final class CandidateBar {
 
     /// The position is decided only when a word is started and when the screen layout changes.
     /// A window that moves while typing is hard to follow, so it stays put for the whole word.
-    private func place() {
+    ///
+    /// `lookup` is the caret position found on `CaretLocator.queue`; nil when following the caret was not asked
+    /// for or nothing usable was found, which puts the window at the bottom of the screen.
+    private func place(using lookup: CaretLocator.Lookup?) {
         var screen = NSScreen.main ?? NSScreen.screens[0]
-        var hit: CaretLocator.Hit?
+        var caret: CGRect?
+        var source = ""
+        var note = lookup?.note ?? ""
 
-        if placement == .followCaret {
-            hit = CaretLocator.caret()
-            // A caret rect that lies on no screen is garbage; placing by it would push the panel off-screen.
-            if let r = hit?.rect, let s = NSScreen.screens.first(where: { $0.frame.intersects(r) }) {
+        if placement == .followCaret, let hit = lookup?.hit {
+            let rect = CaretLocator.toScreenCoordinates(hit.rect)
+            // A rectangle that lies on no screen is garbage; placing by it would push the panel off-screen.
+            if let s = NSScreen.screens.first(where: { $0.frame.intersects(rect) }) {
                 screen = s
-            } else if hit != nil {
-                hit = nil
-                CaretLocator.note(String(localized: "The reported caret is outside every screen"))
+                caret = rect
+                source = hit.source
+            } else {
+                note = String(localized: "The reported caret is outside every screen")
             }
         }
 
@@ -290,7 +308,7 @@ final class CandidateBar {
             y = topY
             lastNote = String(localized: "Always at the top of the screen")
         case .followCaret:
-            if let caret = hit?.rect {
+            if let caret {
                 // Horizontally, line up a little left of the caret, pushed inside the screen if need be.
                 x = min(max(caret.minX - 24, vf.minX + 8), vf.maxX - w - 8).rounded()
                 // Vertically, below the caret; above it when there is no room.
@@ -298,10 +316,9 @@ final class CandidateBar {
                 let above = caret.maxY + caretGap
                 y = below >= vf.minY + 8 ? below : above
                 y = min(max(y, vf.minY + 8), topY)          // never leave the visible area
-                lastNote = String(format: "%@ x%.0f y%.0f (%@)",
-                                  hit!.source, caret.minX, caret.minY, CaretLocator.lastNote)
+                lastNote = String(format: "%@ x%.0f y%.0f (%@)", source, caret.minX, caret.minY, note)
             } else {
-                lastNote = CaretLocator.lastNote
+                lastNote = note
             }
         }
 
@@ -309,8 +326,8 @@ final class CandidateBar {
         anchor = NSPoint(x: x, y: y.rounded())
         // When following the caret the left edge stays at the caret and the width grows to the right with the
         // content. A fixed placement is centered with a fixed width.
-        anchorLimit = placement == .followCaret ? vf.maxX - 8 - x : w
-        fixedWidth = placement == .followCaret ? nil : w
+        anchorLimit = placement == .followCaret && caret != nil ? vf.maxX - 8 - x : w
+        fixedWidth = placement == .followCaret && caret != nil ? nil : w
     }
 
     /// Leaves the left edge (the anchor) alone and fits only the width to the content.
@@ -324,14 +341,36 @@ final class CandidateBar {
 
     func show(pending: String?, candidates: [String], selected: Int?, definition: String? = nil) {
         guard pending != nil || !candidates.isEmpty else { hide(); return }
-        if !isVisible {
-            joinAllSpaces()
-            place()
-        } else if needsPlacement {
-            place()
+        latest = Content(pending: pending, candidates: candidates, selected: selected, definition: definition)
+
+        if isVisible && !needsPlacement { render(); return }
+        guard !lookingUp else { return }          // the latest content is shown when the lookup finishes
+
+        // Starting a word, or the screens changed: find the caret first. The window appears when the answer
+        // arrives, which is a few milliseconds when an app answers and at most `CaretLocator`'s budget when it
+        // does not. Asking on the main thread instead would hold up the keyboard for that long.
+        lookingUp = true
+        lookupToken &+= 1
+        let token = lookupToken
+        let follow = placement == .followCaret
+        CaretLocator.queue.async { [weak self] in
+            let found = follow ? CaretLocator.caret() : nil
+            DispatchQueue.main.async {
+                guard let self, token == self.lookupToken else { return }
+                self.lookingUp = false
+                if !self.isVisible { self.joinAllSpaces() }
+                self.place(using: found)
+                self.render()
+            }
         }
+    }
+
+    /// Puts the latest content on screen, at the position `place` decided.
+    private func render() {
+        guard let content = latest else { return }
         view.debugOverride = debug ? "\(String(localized: "[Position]")) \(lastNote)" : nil
-        view.update(pending: pending, items: candidates, selected: selected, definition: definition)
+        view.update(pending: content.pending, items: content.candidates, selected: content.selected,
+                    definition: content.definition)
         resizeToContent()
         panel.orderFrontRegardless()
         ensureOnActiveSpace()
@@ -365,6 +404,9 @@ final class CandidateBar {
     }
 
     func hide() {
+        latest = nil
+        lookupToken &+= 1          // drops a lookup still in flight
+        lookingUp = false
         guard isVisible else { return }
         panel.orderOut(nil)
         view.update(pending: nil, items: [], selected: nil, definition: nil)

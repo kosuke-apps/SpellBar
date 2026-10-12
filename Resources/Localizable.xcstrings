@@ -358,23 +358,6 @@
         }
       }
     },
-    "Not read yet": {
-      "comment": "Debug readout: nothing asked yet",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not read yet"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未取得"
-          }
-        }
-      }
-    },
     "Couldn't get the focused element": {
       "comment": "Debug readout",
       "localizations": {
@@ -426,23 +409,6 @@
         }
       }
     },
-    "This app doesn't report a position": {
-      "comment": "Debug readout",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This app doesn't report a position"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このアプリは位置を返さない"
-          }
-        }
-      }
-    },
     "The reported caret is outside every screen": {
       "comment": "Debug readout",
       "localizations": {
@@ -490,6 +456,142 @@
           "stringUnit": {
             "state": "translated",
             "value": "入力欄"
+          }
+        }
+      }
+    },
+    "This app doesn't report a usable position (%@)": {
+      "comment": "Debug readout; %@ is the element's role and size",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app doesn't report a usable position (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは使える位置を返さない（%@）"
+          }
+        }
+      }
+    },
+    "Status: listening": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: listening"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: 入力を監視中"
+          }
+        }
+      }
+    },
+    "Status: turned off in this menu": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: turned off in this menu"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: メニューでオフにしています"
+          }
+        }
+      }
+    },
+    "Status: needs Accessibility and Input Monitoring": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: needs Accessibility and Input Monitoring"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: アクセシビリティと入力監視の許可が必要です"
+          }
+        }
+      }
+    },
+    "Status: paused, macOS turned the keyboard monitor off": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: paused, macOS turned the keyboard monitor off"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: 停止中（macOS が入力の監視を止めました）"
+          }
+        }
+      }
+    },
+    "Status: paused, secure input is on (held by %@)": {
+      "comment": "Menu: top line; %@ is the app that switched secure input on",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: paused, secure input is on (held by %@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: 停止中（セキュア入力が有効です．原因: %@）"
+          }
+        }
+      }
+    },
+    "Status: paused, secure input is on": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: paused, secure input is on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: 停止中（セキュア入力が有効です）"
+          }
+        }
+      }
+    },
+    "Status: paused while the Japanese input is typing kana": {
+      "comment": "Menu: top line",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status: paused while the Japanese input is typing kana"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態: 停止中（かな入力中）"
           }
         }
       }
