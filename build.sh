@@ -17,11 +17,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>SpellBar</string>
   <key>CFBundleDisplayName</key><string>SpellBar</string>
   <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>ja</string></array>
   <key>CFBundleExecutable</key><string>SpellBar</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.1.0</string>
-  <key>CFBundleVersion</key><string>3</string>
+  <key>CFBundleShortVersionString</key><string>1.2.0</string>
+  <key>CFBundleVersion</key><string>4</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Kosuke Satake. MIT License.</string>
@@ -36,6 +38,14 @@ if [ ! -f Resources/AppIcon.icns ]; then
   iconutil -c icns /tmp/spellbar.iconset -o Resources/AppIcon.icns
 fi
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+# Compile the String Catalog into en.lproj and ja.lproj. Having both folders in the bundle is also what makes
+# macOS offer a per-app language for SpellBar (System Settings → General → Language & Region → Applications).
+python3 tools/check_localization.py
+if ! xcrun --find xcstringstool >/dev/null 2>&1; then
+  export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+fi
+xcrun xcstringstool compile --output-directory "$APP/Contents/Resources" Resources/Localizable.xcstrings
 
 swiftc -O \
   -o "$APP/Contents/MacOS/SpellBar" \

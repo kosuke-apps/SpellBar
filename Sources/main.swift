@@ -1,7 +1,7 @@
 import Cocoa
 import ServiceManagement
 
-/// メニューバー常駐のみ．Dock アイコンは出さない (Info.plist の LSUIElement)．
+/// Lives in the menu bar only: no Dock icon (`LSUIElement` in Info.plist).
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enableLoginItemOnFirstLaunch()
         setupStatusItem()
 
-        // アクセシビリティ権限．無ければシステム設定へ誘導するダイアログが出る．
+        // Accessibility permission; without it macOS shows a prompt that leads to System Settings.
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(opts)
 
@@ -27,10 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.image = NSImage(systemSymbolName: "exclamationmark.triangle",
                                                accessibilityDescription: "SpellBar")
             let a = NSAlert()
-            a.messageText = "キー入力を監視できませんでした"
+            a.messageText = String(localized: "SpellBar can't watch the keyboard")
             a.informativeText = trusted
-                ? "システム設定 → プライバシーとセキュリティ →「入力監視」で SpellBar を許可してから，アプリを再起動してください．"
-                : "システム設定 → プライバシーとセキュリティ →「アクセシビリティ」と「入力監視」の両方で SpellBar を許可してから，アプリを再起動してください．"
+                ? String(localized: "Allow SpellBar under System Settings → Privacy & Security → Input Monitoring, then restart the app.")
+                : String(localized: "Allow SpellBar under System Settings → Privacy & Security → Accessibility and Input Monitoring, then restart the app.")
             a.runModal()
         }
     }
@@ -76,26 +76,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        let toggle = NSMenuItem(title: "SpellBar を有効にする", action: #selector(toggleEnabled(_:)), keyEquivalent: "")
+        let toggle = NSMenuItem(title: String(localized: "Enable SpellBar"), action: #selector(toggleEnabled(_:)), keyEquivalent: "")
         toggle.target = self
         toggle.state = .on
         menu.addItem(toggle)
 
-        let always = NSMenuItem(title: "変換キーを使わず常に候補を表示", action: #selector(toggleAlways(_:)), keyEquivalent: "")
+        let always = NSMenuItem(title: String(localized: "Always show candidates (no conversion key needed)"), action: #selector(toggleAlways(_:)), keyEquivalent: "")
         always.target = self
         always.state = engine.alwaysShow ? .on : .off
         menu.addItem(always)
 
-        let login = NSMenuItem(title: "ログイン時に自動起動", action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
+        let login = NSMenuItem(title: String(localized: "Start at login"), action: #selector(toggleLoginItem(_:)), keyEquivalent: "")
         login.target = self
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
 
-        let position = NSMenuItem(title: "候補ウィンドウの位置", action: nil, keyEquivalent: "")
+        let position = NSMenuItem(title: String(localized: "Candidate window position"), action: nil, keyEquivalent: "")
         let positionMenu = NSMenu()
-        for (title, value) in [("入力位置に追従（取れなければ画面の下）", CandidateBar.Placement.followCaret),
-                               ("常に画面の下", .bottom),
-                               ("常に画面の上", .top)] {
+        for (title, value) in [(String(localized: "Follow the caret (bottom of the screen if unavailable)"),
+                                CandidateBar.Placement.followCaret),
+                               (String(localized: "Always at the bottom of the screen"), .bottom),
+                               (String(localized: "Always at the top of the screen"), .top)] {
             let item = NSMenuItem(title: title, action: #selector(choosePlacement(_:)), keyEquivalent: "")
             item.target = self
             item.tag = value.rawValue
@@ -103,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             positionMenu.addItem(item)
         }
         positionMenu.addItem(.separator())
-        let debugItem = NSMenuItem(title: "位置の判定結果を表示（デバッグ）",
+        let debugItem = NSMenuItem(title: String(localized: "Show how the position was found (debug)"),
                                    action: #selector(toggleDebug(_:)), keyEquivalent: "")
         debugItem.target = self
         debugItem.state = engine.debugPlacement ? .on : .off
@@ -113,38 +114,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(position)
 
         menu.addItem(.separator())
-        for line in ["右Shift 単押し … 変換 / 次候補 / 再変換",
-                     "return … 確定",
-                     "space … 確定して空白を入れる",
-                     "esc … 元の綴りに戻す",
-                     "⌘1〜⌘5 … その候補で直接確定",
-                     "⌘D … 辞書アプリでその語を引く"] {
+        for line in [String(localized: "Right Shift (tap) … convert / next candidate / reconvert"),
+                     String(localized: "Return … confirm"),
+                     String(localized: "Space … confirm and type a space"),
+                     String(localized: "Esc … restore the original spelling"),
+                     String(localized: "⌘1–⌘5 … confirm that candidate"),
+                     String(localized: "⌘D … look the word up in Dictionary")] {
             let item = NSMenuItem(title: line, action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
         }
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "SpellBar を終了", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: String(localized: "Quit SpellBar"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         statusItem.menu = menu
     }
 
-    /// メニューバーのアイコン．
-    /// 文字を並べると幅を食うので図形だけで描く．
-    /// 横棒2本だと漢数字の二に見えてしまうため，下側はスペルチェックの定番である波線にしている．
+    /// The menu bar icon.
+    /// Drawn as shapes only, since letters take up width. Two bars read as the kanji for "two", so the lower one
+    /// is the squiggle that spell checkers underline with.
     private static let statusIcon: NSImage = {
         let size = NSSize(width: 15, height: 13)
         let image = NSImage(size: size, flipped: false) { _ in
             NSColor.black.setFill()
             NSColor.black.setStroke()
 
-            // 語を表す帯
+            // The bar standing for a word
             NSBezierPath(roundedRect: NSRect(x: 1.5, y: 8.0, width: 12, height: 3),
                          xRadius: 1.5, yRadius: 1.5).fill()
 
-            // スペルチェックの波線
+            // The spell checker squiggle
             let wave = NSBezierPath()
             wave.lineWidth = 1.4
             wave.lineCapStyle = .round
@@ -157,7 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wave.stroke()
             return true
         }
-        image.isTemplate = true          // メニューバーの明暗に自動で追従する
+        image.isTemplate = true          // follows the menu bar's light or dark appearance
         return image
     }()
 
@@ -192,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.debugPlacement = (item.state == .on)
     }
 
-    /// ログイン項目への登録．macOS 13 以降の SMAppService を使う．
+    /// Registers or removes the login item through `SMAppService` (macOS 13 and later).
     @objc private func toggleLoginItem(_ item: NSMenuItem) {
         let service = SMAppService.mainApp
         do {
@@ -203,8 +204,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             let a = NSAlert()
-            a.messageText = "自動起動の設定を変更できませんでした"
-            a.informativeText = "\(error.localizedDescription)\n\nシステム設定 → 一般 → ログイン項目 から手動でも追加できます．"
+            a.messageText = String(localized: "Couldn't change the start-at-login setting")
+            a.informativeText = error.localizedDescription + "\n\n"
+                + String(localized: "You can also add it under System Settings → General → Login Items.")
             a.runModal()
         }
         item.state = service.status == .enabled ? .on : .off
@@ -213,7 +215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func quit() { NSApp.terminate(nil) }
 }
 
-// --selftest: 権限もUIも使わず，候補生成だけを確認するモード
+// --selftest: checks the candidate engine, word tracking and reconversion rules without any permission or UI
 if CommandLine.arguments.contains("--selftest") {
     let engine = CandidateEngine()
     let samples = ["thier", "definit", "recie", "enviroment", "occurence", "seperate",
@@ -330,9 +332,71 @@ if CommandLine.arguments.contains("--selftest") {
         }
         print(choiceFailures == 0 ? "all \(choices.count) passed" : "\(choiceFailures) FAILED")
 
-        print("\n--- 語義 ---")
+        print("\n--- condensing dictionary entries ---")
+        // Raw text as the two kinds of dictionary return it (shortened).
+        let pellucid = "pel･lu･cid | pɪlúːsɪd | 形容詞｟文｠ 1 〈目･水･音などが〉澄みきった. 2 〈文体･意味などが〉明瞭な."
+        let kerfuffle = "ker･fuf･fle | kərfʌ́f(ə)l | 名詞C｟英･くだけて｠ 〖単数形で〗 «…に関する» から騒ぎ, 大騒ぎ, 騒動 «about, over» ."
+        let obsequious = "ob･se･qui･ous | əbsíːkwiəs | 形容詞｟かたく･けなして｠ 【相手に】おもねるような, こびへつらった «to» . ～･ly副詞こびへつらうように."
+        let definitionCases: [(String, String, String?)] = [
+            ("English: first sense, before the example",
+             "defenestrate de·fen·es·trate | dēˈfenəˌstrāt | verb [with object] 1 rare throw (someone) out of a window: she had made up her mind. 2 remove or dismiss (someone) from a position of power.",
+             "rare throw (someone) out of a window"),
+            ("English: list of paraphrases",
+             "receive re·ceive | rəˈsēv | verb [with object] 1 be given, presented with, or paid (something): she received a letter. 2 suffer or experience.",
+             "be given, presented with, or paid (something)"),
+            ("English: semicolon inside the sense",
+             "affect¹ af·fect | əˈfekt | verb [with object] 1 have an effect on; make a difference to: the disease affects the central nervous system.",
+             "have an effect on; make a difference to"),
+            ("English: noun with (plural …)",
+             "dictionary dic·tio·nary | ˈdikSHəˌnerē | noun (plural dictionaries) a book that gives the meaning of words: a Spanish dictionary.",
+             "a book that gives the meaning of words"),
+            ("English: no sense number, no example",
+             "ephemeral | əˈfem(ə)rəl | adjective lasting for a very short time",
+             "lasting for a very short time"),
+            ("English: auxiliary verb is not read as verb",
+             "can² | kan | auxiliary verb (3rd singular present can) be able to",
+             "be able to"),
+            ("English: long sense is cut at a word",
+             "x | x | noun " + String(repeating: "word ", count: 30),
+             String(repeating: "word ", count: 16).trimmingCharacters(in: .whitespaces) + "…"),   // 79 characters fit
+            ("English: no part of speech, nothing to anchor on", "foo bar baz", nil),
+            ("Japanese: adjective, two senses", pellucid, "〈目･水･音などが〉澄みきった. 2 〈文体･意味などが〉明瞭な."),
+            ("Japanese: leading note keeps its brackets", kerfuffle, "«…に関する» から騒ぎ, 大騒ぎ, 騒動 «about, over» ."),
+            ("Japanese: notes and inflections dropped", obsequious, "【相手に】おもねるような, こびへつらった «to» . ～･ly こびへつらうように."),
+        ]
+        var definitionFailures = 0
+        for (label, raw, expected) in definitionCases {
+            let got = Definitions.condense(raw)
+            let ok = got == expected
+            if !ok { definitionFailures += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(label.padding(toLength: 46, withPad: " ", startingAt: 0)) -> \(got ?? "nil")"
+                  + "\(ok ? "" : "   (expected \(expected ?? "nil"))")")
+        }
+        print(definitionFailures == 0 ? "all \(definitionCases.count) passed" : "\(definitionFailures) FAILED")
+
+        print("\n--- localization: each language's table is in the bundle ---")
+        let localeChecks: [(String, String, String)] = [
+            ("en", "Quit SpellBar", "Quit SpellBar"),
+            ("ja", "Quit SpellBar", "SpellBar を終了"),
+            ("en", "Start at login", "Start at login"),
+            ("ja", "Start at login", "ログイン時に自動起動"),
+        ]
+        var localeFailures = 0
+        for (lang, key, expected) in localeChecks {
+            let bundle = Bundle.main.path(forResource: lang, ofType: "lproj").flatMap { Bundle(path: $0) }
+            let got = bundle?.localizedString(forKey: key, value: "<missing>", table: nil) ?? "<no \(lang).lproj>"
+            let ok = got == expected
+            if !ok { localeFailures += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(lang) \(key.padding(toLength: 16, withPad: " ", startingAt: 0)) -> \(got)")
+        }
+        print(localeFailures == 0 ? "all \(localeChecks.count) passed" : "\(localeFailures) FAILED")
+        // Which language the app itself picks in this run, e.g. with `-AppleLanguages "(ja)"` on the command line.
+        print("language chosen for this run: \(Bundle.main.preferredLocalizations.first ?? "?")"
+              + " (\(String(localized: "Quit SpellBar")))")
+
+        print("\n--- definitions ---")
         for w in ["receive", "environment", "definitely", "separate", "occurrence", "async"] {
-            print(String(format: "%-12@ %@", w as NSString, Definitions.lookup(w) ?? "(辞書になし)"))
+            print(String(format: "%-12@ %@", w as NSString, Definitions.lookup(w) ?? "(not in a dictionary)"))
         }
         sem.signal()
     }

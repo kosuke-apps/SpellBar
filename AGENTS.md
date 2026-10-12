@@ -31,6 +31,8 @@ assembles `SpellBar.app` by hand. Deployment target macOS 13; developed on macOS
 | `Definitions.swift` | macOS dictionary lookups, condensed to one line. |
 | `CandidateBar.swift` | The floating panel and its drawing; placement and the all-Spaces registration. |
 | `SeedTerms.swift`, `Logging.swift` | Built-in programming words; the log subsystem. |
+| `Resources/Localizable.xcstrings` | Every interface text, in English (the source) and Japanese. `build.sh` compiles it into `en.lproj` and `ja.lproj`. |
+| `tools/check_localization.py` | Run by `build.sh`: every `String(localized: "…")` in `Sources/` must be in the catalog with both languages. |
 
 ## Things that were hard to get right
 
@@ -49,6 +51,17 @@ Do not undo these without reading why.
 - **The panel must not take focus** (`.nonactivatingPanel`), and its height and left edge must stay steady while a
   word is being typed.
 - **Keep quiet** during secure input and kana composition.
+
+## Localization
+
+Interface text is English with a Japanese translation, never a string literal shown to the user. Write
+`String(localized: "English text")` with a literal (not a variable), add the same text as a key to
+`Resources/Localizable.xcstrings` with `en` and `ja` values, and let `build.sh` check it. Japanese uses full-width `，` and `．`.
+`CFBundleLocalizations` in `build.sh` lists the languages; both `.lproj` folders in the bundle are also what makes
+macOS offer a per-app language for the app. Dictionary meanings are not localized text: they come from whatever
+dictionary the user ranks first, and `Definitions.condense` handles both Japanese and English entries.
+
+To try a language without changing the Mac's setting: `SpellBar --selftest -AppleLanguages "(ja)"`.
 
 ## Commands
 
@@ -78,7 +91,5 @@ shasum -a 256 dist/SpellBar-X.Y.Z.dmg > dist/SpellBar-X.Y.Z.dmg.sha256
 
 ## Still to do
 
-- The menu and the alerts are hard-coded Japanese. The program rules want English as the base language with a
-  Japanese localization through a String Catalog. Comments in the older files are Japanese too.
 - Candidate quality: the programming-term fuzzy match sometimes answers a plain English misspelling
   (`recie` → `redis`).

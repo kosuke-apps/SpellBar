@@ -1,0 +1,499 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Enable SpellBar": {
+      "comment": "Menu: master switch",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable SpellBar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SpellBar を有効にする"
+          }
+        }
+      }
+    },
+    "Always show candidates (no conversion key needed)": {
+      "comment": "Menu: show candidates while typing",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always show candidates (no conversion key needed)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変換キーを使わず常に候補を表示"
+          }
+        }
+      }
+    },
+    "Start at login": {
+      "comment": "Menu: login item",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start at login"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン時に自動起動"
+          }
+        }
+      }
+    },
+    "Candidate window position": {
+      "comment": "Menu: submenu title",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Candidate window position"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "候補ウィンドウの位置"
+          }
+        }
+      }
+    },
+    "Follow the caret (bottom of the screen if unavailable)": {
+      "comment": "Menu: position choice",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow the caret (bottom of the screen if unavailable)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力位置に追従（取れなければ画面の下）"
+          }
+        }
+      }
+    },
+    "Always at the bottom of the screen": {
+      "comment": "Menu: position choice, and the debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always at the bottom of the screen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常に画面の下"
+          }
+        }
+      }
+    },
+    "Always at the top of the screen": {
+      "comment": "Menu: position choice, and the debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always at the top of the screen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "常に画面の上"
+          }
+        }
+      }
+    },
+    "Show how the position was found (debug)": {
+      "comment": "Menu: toggles the debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show how the position was found (debug)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "位置の判定結果を表示（デバッグ）"
+          }
+        }
+      }
+    },
+    "Right Shift (tap) … convert / next candidate / reconvert": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Right Shift (tap) … convert / next candidate / reconvert"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右Shift 単押し … 変換 / 次候補 / 再変換"
+          }
+        }
+      }
+    },
+    "Return … confirm": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Return … confirm"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "return … 確定"
+          }
+        }
+      }
+    },
+    "Space … confirm and type a space": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Space … confirm and type a space"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "space … 確定して空白を入れる"
+          }
+        }
+      }
+    },
+    "Esc … restore the original spelling": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esc … restore the original spelling"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "esc … 元の綴りに戻す"
+          }
+        }
+      }
+    },
+    "⌘1–⌘5 … confirm that candidate": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘1–⌘5 … confirm that candidate"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘1〜⌘5 … その候補で直接確定"
+          }
+        }
+      }
+    },
+    "⌘D … look the word up in Dictionary": {
+      "comment": "Menu: key hint",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘D … look the word up in Dictionary"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘D … 辞書アプリでその語を引く"
+          }
+        }
+      }
+    },
+    "Quit SpellBar": {
+      "comment": "Menu: quit",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quit SpellBar"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SpellBar を終了"
+          }
+        }
+      }
+    },
+    "SpellBar can't watch the keyboard": {
+      "comment": "Alert title when the event tap cannot start",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SpellBar can't watch the keyboard"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キー入力を監視できませんでした"
+          }
+        }
+      }
+    },
+    "Allow SpellBar under System Settings → Privacy & Security → Input Monitoring, then restart the app.": {
+      "comment": "Alert text when Accessibility is granted but Input Monitoring is not",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow SpellBar under System Settings → Privacy & Security → Input Monitoring, then restart the app."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定 → プライバシーとセキュリティ →「入力監視」で SpellBar を許可してから，アプリを再起動してください．"
+          }
+        }
+      }
+    },
+    "Allow SpellBar under System Settings → Privacy & Security → Accessibility and Input Monitoring, then restart the app.": {
+      "comment": "Alert text when neither permission is granted",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow SpellBar under System Settings → Privacy & Security → Accessibility and Input Monitoring, then restart the app."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定 → プライバシーとセキュリティ →「アクセシビリティ」と「入力監視」の両方で SpellBar を許可してから，アプリを再起動してください．"
+          }
+        }
+      }
+    },
+    "Couldn't change the start-at-login setting": {
+      "comment": "Alert title when the login item cannot be changed",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't change the start-at-login setting"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動起動の設定を変更できませんでした"
+          }
+        }
+      }
+    },
+    "You can also add it under System Settings → General → Login Items.": {
+      "comment": "Alert text, after the system's own error message",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can also add it under System Settings → General → Login Items."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定 → 一般 → ログイン項目 から手動でも追加できます．"
+          }
+        }
+      }
+    },
+    "[Position]": {
+      "comment": "Debug readout prefix",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[Position]"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "［位置］"
+          }
+        }
+      }
+    },
+    "Not read yet": {
+      "comment": "Debug readout: nothing asked yet",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not read yet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未取得"
+          }
+        }
+      }
+    },
+    "Couldn't get the focused element": {
+      "comment": "Debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't get the focused element"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォーカスされた要素を取得できない"
+          }
+        }
+      }
+    },
+    "From the caret": {
+      "comment": "Debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From the caret"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャレットから取得"
+          }
+        }
+      }
+    },
+    "From the input field's rectangle (caret not supported)": {
+      "comment": "Debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "From the input field's rectangle (caret not supported)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力欄の矩形から取得（キャレット非対応）"
+          }
+        }
+      }
+    },
+    "This app doesn't report a position": {
+      "comment": "Debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app doesn't report a position"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは位置を返さない"
+          }
+        }
+      }
+    },
+    "The reported caret is outside every screen": {
+      "comment": "Debug readout",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The reported caret is outside every screen"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "報告されたキャレットがどの画面にも載っていない"
+          }
+        }
+      }
+    },
+    "caret": {
+      "comment": "Debug readout: where the position came from",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "caret"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャレット"
+          }
+        }
+      }
+    },
+    "input field": {
+      "comment": "Debug readout: where the position came from",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "input field"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力欄"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

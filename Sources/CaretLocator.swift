@@ -1,21 +1,20 @@
 import Cocoa
 import ApplicationServices
 
-/// フォーカスされているテキスト入力のキャレット位置を，画面座標（原点は左下）で返す．
+/// Returns the caret position of the focused text input in screen coordinates (origin at the bottom left).
 ///
-/// アクセシビリティ API 越しに他プロセスへ問い合わせるので，
-/// 応答しないアプリで固まらないよう短いタイムアウトを掛けている．
-/// 対応していないアプリも多いので，どこで失敗したかを `lastNote` に残す．
+/// It asks another process through the accessibility API, so a short timeout keeps an unresponsive app
+/// from freezing SpellBar. Many apps do not support it, so where a lookup failed is kept in `lastNote`.
 enum CaretLocator {
 
     struct Hit {
         let rect: CGRect
-        let source: String      // "キャレット" か "入力欄"
+        let source: String      // "caret" or "input field"
     }
 
     private static let timeout: Float = 0.08
-    /// 直近の取得結果．うまくいかないアプリを切り分けるためのデバッグ表示に使う．
-    private(set) static var lastNote = "未取得"
+    /// The outcome of the last lookup, for the debug readout that tells apps where following the caret fails.
+    private(set) static var lastNote = String(localized: "Not read yet")
 
     /// Lets callers record why they rejected a result, for the debug readout.
     static func note(_ text: String) { lastNote = text }
@@ -40,28 +39,28 @@ enum CaretLocator {
 
     static func caret() -> Hit? {
         guard let element = focusedElement() else {
-            lastNote = "フォーカスされた要素を取得できない"
+            lastNote = String(localized: "Couldn't get the focused element")
             return nil
         }
 
         if let rect = caretBounds(of: element), rect.height > 0 {
-            lastNote = "キャレットから取得"
-            return Hit(rect: flip(rect), source: "キャレット")
+            lastNote = String(localized: "From the caret")
+            return Hit(rect: flip(rect), source: String(localized: "caret"))
         }
         if let rect = elementBounds(of: element), rect.height > 0 {
-            lastNote = "入力欄の矩形から取得（キャレット非対応）"
-            return Hit(rect: flip(rect), source: "入力欄")
+            lastNote = String(localized: "From the input field's rectangle (caret not supported)")
+            return Hit(rect: flip(rect), source: String(localized: "input field"))
         }
-        lastNote = "このアプリは位置を返さない"
+        lastNote = String(localized: "This app doesn't report a position")
         return nil
     }
 
-    /// 選択範囲（キャレット）の矩形．これが取れるのが一番正確．
+    /// The rectangle of the selection (the caret). It is the most accurate thing to get.
     private static func caretBounds(of element: AXUIElement) -> CGRect? {
         guard let range = selectedRange(of: element) else { return nil }
 
-        // 長さ0だと矩形を返さないアプリがあるので最低1文字ぶん要求する．
-        // 行頭にキャレットがある場合に備えて，直前の1文字でも試す．
+        // Some apps return no rectangle for a zero-length range, so ask for at least one character.
+        // With the caret at the start of a line, also try the character before it.
         for query in [CFRange(location: range.location, length: max(range.length, 1)),
                       CFRange(location: max(range.location - 1, 0), length: 1)] {
             var q = query
@@ -76,7 +75,7 @@ enum CaretLocator {
         return nil
     }
 
-    /// キャレットが取れないときは，入力欄そのものの矩形で代用する．
+    /// When the caret cannot be had, the rectangle of the input field itself stands in.
     private static func elementBounds(of element: AXUIElement) -> CGRect? {
         guard let posValue = copy(element, kAXPositionAttribute),
               let sizeValue = copy(element, kAXSizeAttribute) else { return nil }
@@ -92,8 +91,8 @@ enum CaretLocator {
         return out
     }
 
-    /// アクセシビリティ API は主ディスプレイ左上を原点に下向きの y を返す．
-    /// AppKit は左下原点なので反転させる．主ディスプレイは原点が (0,0) の画面．
+    /// The accessibility API puts the origin at the top left of the main display with y pointing down.
+    /// AppKit's origin is the bottom left, so flip it. The main display is the screen whose origin is (0,0).
     private static func flip(_ rect: CGRect) -> CGRect {
         let primary = NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first
         let height = primary?.frame.height ?? 0

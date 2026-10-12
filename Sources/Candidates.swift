@@ -1,10 +1,10 @@
 import Cocoa
 
-/// 候補生成エンジン．
-/// Touch Bar の入力候補と同じ NSSpellChecker を使い，
-/// (1) 途中入力の補完 (2) スペル修正 (3) プログラミング用語 を混ぜて返す．
+/// The candidate engine.
+/// It uses `NSSpellChecker`, the same engine as the Touch Bar's typing suggestions, and mixes
+/// (1) completions of a word typed so far, (2) spelling corrections and (3) programming terms.
 ///
-/// NSSpellChecker はスレッドセーフではないので，必ずこの `queue` の上だけで触ること．
+/// `NSSpellChecker` is not thread-safe, so touch it only on this `queue`.
 final class CandidateEngine {
 
     static let queue = DispatchQueue(label: "spellbar.candidates")
@@ -19,9 +19,9 @@ final class CandidateEngine {
 
     init() { loadTerms() }
 
-    // MARK: - プログラミング用語辞書
+    // MARK: - Programming terms
 
-    /// ~/.config/spellbar/terms.txt があれば読み，無ければ組み込みの種辞書を使う．
+    /// Reads ~/.config/spellbar/terms.txt when it exists and adds the built-in seed list.
     private func loadTerms() {
         let path = ("~/.config/spellbar/terms.txt" as NSString).expandingTildeInPath
         var list = CandidateEngine.seedTerms
@@ -34,15 +34,15 @@ final class CandidateEngine {
         termsByFirst = Dictionary(grouping: terms) { Character($0.prefix(1).lowercased()) }
     }
 
-    // MARK: - 候補生成
+    // MARK: - Candidates
 
     func candidates(for partial: String) -> [String] {
         guard partial.count >= 3 else { return [] }
         let ns = partial as NSString
         let range = NSRange(location: 0, length: ns.length)
 
-        // 入力そのものが正しい綴りかどうか．正しいなら「修正候補」は出さない
-        // (hello に cello / jello が並ぶのを防ぐ)
+        // Whether the input itself is spelled correctly. If it is, no corrections are offered
+        // (so "hello" is not followed by "cello" and "jello").
         let misspelled = checker.checkSpelling(of: partial, startingAt: 0,
                                                language: "en", wrap: false,
                                                inSpellDocumentWithTag: tag,
@@ -52,29 +52,29 @@ final class CandidateEngine {
         func add(_ s: String) {
             guard out.count < maxCandidates else { return }
             guard s.caseInsensitiveCompare(partial) != .orderedSame else { return }
-            // 所有格・アポストロフィ形は実用性が低いので落とす
+            // Possessive and apostrophe forms are rarely useful, so they are dropped.
             guard !s.contains("'") || partial.contains("'") else { return }
-            // "middle war" / "authentic-at" のような分割候補は打ち直しの役に立たない
+            // Split candidates such as "middle war" or "authentic-at" do not help with retyping.
             guard !(s.contains(" ") || s.contains("-")) || partial.contains("-") else { return }
             guard !out.contains(where: { $0.caseInsensitiveCompare(s) == .orderedSame }) else { return }
             out.append(s)
         }
 
-        // (0) 過去に自分がこの綴りから選んだ語を最優先にする
+        // (0) Words the user chose for this spelling before come first.
         learning.preferred(for: partial).prefix(2).forEach(add)
 
-        // (1) プログラミング用語の前方一致: asyn -> async, asyncio
+        // (1) Programming terms that start with the input: asyn -> async, asyncio
         termsMatching(prefix: partial).prefix(2).forEach(add)
 
-        // (2) 英単語の前方一致補完: definit -> definitely, definition
+        // (2) Completions of English words: definit -> definitely, definition
         let completions = checker.completions(forPartialWordRange: range, in: partial,
                                               language: "en", inSpellDocumentWithTag: tag) ?? []
         completions.prefix(3).forEach(add)
 
-        // (3) 綴りが崩れた用語の救済: kubernets -> kubernetes
+        // (3) Rescuing a term with broken spelling: kubernets -> kubernetes
         if misspelled { termsNear(partial).prefix(2).forEach(add) }
 
-        // (4) スペル修正: thier -> their
+        // (4) Spelling corrections: thier -> their
         if misspelled {
             let guesses = checker.guesses(forWordRange: range, in: partial,
                                           language: "en", inSpellDocumentWithTag: tag) ?? []
@@ -84,7 +84,7 @@ final class CandidateEngine {
         return applyCase(of: partial, to: out)
     }
 
-    /// 入力が Foo / FOO なら候補も合わせる．
+    /// Matches the case of the input: Foo gives Foo…, FOO gives FOO….
     private func applyCase(of partial: String, to list: [String]) -> [String] {
         guard let first = partial.first else { return list }
         if partial.count > 1 && partial.allSatisfy({ $0.isUppercase }) { return list.map { $0.uppercased() } }
@@ -109,7 +109,7 @@ final class CandidateEngine {
             .map(\.0)
     }
 
-    /// 上限付きレーベンシュタイン距離．cap を超えたら打ち切る．
+    /// Levenshtein distance with a ceiling; stops as soon as it exceeds `cap`.
     private func editDistance(_ a: String, _ b: String, cap: Int) -> Int {
         let x = Array(a), y = Array(b)
         if abs(x.count - y.count) > cap { return cap + 1 }

@@ -1,17 +1,17 @@
 import Cocoa
 
-/// 候補ウィンドウの描画．
-/// 「変換対象の語（下線付き）| 候補1 候補2 …」を上段に，選択中の候補の語義を下段に出す．
+/// Draws the candidate window: "the word being converted (underlined) | candidate 1  candidate 2 …" on the top
+/// row, and the meaning of the selected candidate on the bottom row.
 ///
-/// 大きさは常に固定．候補の数や語義の有無で幅も高さも変えない．
-/// 内容が変わるたびにチップが動くと目で追えなくなるため，中央寄せもしていない．
+/// The size is fixed whatever the number of candidates or whether there is a meaning. Chips that move every
+/// time the content changes are hard to follow, so nothing is centered either.
 final class BarView: NSView {
 
-    var pending: String?                    // 変換対象の語（下線を引いて表示する）
+    var pending: String?                    // the word being converted (shown underlined)
     var items: [String] = []
-    var selected: Int?                      // 変換モードでいま当たっている候補
-    var definition: String?                 // 選択中の候補の語義
-    var debugOverride: String?              // デバッグ表示（語義の代わりに出す）
+    var selected: Int?                      // the candidate currently chosen during a conversion
+    var definition: String?                 // the meaning of the chosen candidate
+    var debugOverride: String?              // debug readout, shown instead of the meaning
     var onPick: ((Int) -> Void)?
 
     private var chipRects: [NSRect] = []
@@ -28,8 +28,8 @@ final class BarView: NSView {
     private let keyGap: CGFloat = 6
     private let sepGap: CGFloat = 12
 
-    static let chipRow: CGFloat = 42        // 候補チップの行
-    static let defRow: CGFloat = 22         // 語義の行（内容が無くても場所は空けておく）
+    static let chipRow: CGFloat = 42        // the row of candidate chips
+    static let defRow: CGFloat = 22         // the meaning row; its space is kept even when it is empty
     static let totalHeight = chipRow + defRow
 
     override var isFlipped: Bool { true }
@@ -44,7 +44,7 @@ final class BarView: NSView {
         needsDisplay = true
     }
 
-    // MARK: レイアウト
+    // MARK: Layout
 
     private func keyLabel(_ i: Int) -> String { "⌘\(i + 1)" }
     private func textWidth(_ s: String, _ f: NSFont) -> CGFloat {
@@ -58,7 +58,7 @@ final class BarView: NSView {
         return textWidth(p, pendFont) + sepGap * 2
     }
 
-    /// 中身を並べるのに必要な幅．左端を固定したまま右へだけ伸ばすのに使う．
+    /// The width needed to lay the content out. Used to grow the window to the right only, with its left edge fixed.
     func contentWidth(max limit: CGFloat) -> CGFloat {
         var w = edge + pendingWidth
         for i in items.indices { w += chipWidth(i) + (i == items.count - 1 ? 0 : gap) }
@@ -69,7 +69,7 @@ final class BarView: NSView {
         return Swift.min(Swift.max(w, 260), limit)
     }
 
-    /// 幅に収まるぶんだけチップを置く．はみ出す候補は描かない．
+    /// Places as many chips as fit in the width; candidates that do not fit are not drawn.
     private func layoutChips() {
         chipRects = []
         var x = edge + pendingWidth
@@ -83,7 +83,7 @@ final class BarView: NSView {
         laidOut = true
     }
 
-    // MARK: 描画
+    // MARK: Drawing
 
     override func draw(_ dirty: NSRect) {
         if !laidOut { layoutChips() }
@@ -91,7 +91,7 @@ final class BarView: NSView {
         let ink: NSColor = dark ? .white : .black
         let dim = NSColor(white: dark ? 0.60 : 0.48, alpha: 1)
 
-        // 変換対象の語 + 下線（IMEの未確定文字列に相当する表示）
+        // The word being converted, underlined (the counterpart of the IME's marked text)
         if let p = pending {
             let s = (p as NSString).size(withAttributes: [.font: pendFont])
             let x = edge, y = BarView.chipRow / 2 - s.height / 2
@@ -157,7 +157,7 @@ final class BarView: NSView {
         ])
     }
 
-    // MARK: マウス
+    // MARK: Mouse
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -176,12 +176,12 @@ final class BarView: NSView {
     }
 }
 
-/// 候補ウィンドウを載せるフローティングパネル．
-/// フォーカスを奪わない (.nonactivatingPanel) のが肝．奪うと入力中のアプリからカーソルが外れる．
+/// The floating panel that holds the candidate window.
+/// It must not take focus (`.nonactivatingPanel`): taking it would pull the caret out of the app being typed in.
 final class CandidateBar {
 
-    /// 候補ウィンドウを画面のどこに出すか．
-    /// 既定は日本語IMEの候補ウィンドウと同じく，入力位置のすぐ下（入らなければ上）．
+    /// Where the candidate window goes.
+    /// By default it sits just below the caret like the Japanese IME's candidate window, or above it if it does not fit.
     enum Placement: Int { case followCaret, bottom, top }
 
     /// Show on every Space (desktop), including full-screen ones.
@@ -203,7 +203,7 @@ final class CandidateBar {
     private let maxWidth: CGFloat = 760
     private let sideMargin: CGFloat = 80
     private let edgeGap: CGFloat = 14
-    /// キャレットと候補ウィンドウのあいだに空ける隙間
+    /// The gap between the caret and the candidate window
     private let caretGap: CGFloat = 6
     private(set) var lastNote = ""
     var debug = false
@@ -258,8 +258,8 @@ final class CandidateBar {
         panel.collectionBehavior = CandidateBar.spacesBehavior
     }
 
-    /// 位置を決めるのは「単語を打ち始めたとき」と「画面が変わったとき」だけ．
-    /// 打っている最中に動くと目で追えなくなるので，同じ単語のあいだは固定する．
+    /// The position is decided only when a word is started and when the screen layout changes.
+    /// A window that moves while typing is hard to follow, so it stays put for the whole word.
     private func place() {
         var screen = NSScreen.main ?? NSScreen.screens[0]
         var hit: CaretLocator.Hit?
@@ -271,7 +271,7 @@ final class CandidateBar {
                 screen = s
             } else if hit != nil {
                 hit = nil
-                CaretLocator.note("caret reported outside every screen")
+                CaretLocator.note(String(localized: "The reported caret is outside every screen"))
             }
         }
 
@@ -285,15 +285,15 @@ final class CandidateBar {
 
         switch placement {
         case .bottom:
-            lastNote = "常に画面の下"
+            lastNote = String(localized: "Always at the bottom of the screen")
         case .top:
             y = topY
-            lastNote = "常に画面の上"
+            lastNote = String(localized: "Always at the top of the screen")
         case .followCaret:
             if let caret = hit?.rect {
-                // 横はキャレットの少し左に合わせる．画面外へはみ出さないよう押し込む．
+                // Horizontally, line up a little left of the caret, pushed inside the screen if need be.
                 x = min(max(caret.minX - 24, vf.minX + 8), vf.maxX - w - 8).rounded()
-                // 縦は原則キャレットの下．入らなければ上に出す．
+                // Vertically, below the caret; above it when there is no room.
                 let below = caret.minY - BarView.totalHeight - caretGap
                 let above = caret.maxY + caretGap
                 y = below >= vf.minY + 8 ? below : above
@@ -307,13 +307,13 @@ final class CandidateBar {
 
         placedAtTop = y > vf.midY
         anchor = NSPoint(x: x, y: y.rounded())
-        // 追従中は左端をキャレットに合わせ，幅は内容に応じて右へ伸ばす．
-        // 固定配置のときは従来どおり中央に固定幅で置く．
+        // When following the caret the left edge stays at the caret and the width grows to the right with the
+        // content. A fixed placement is centered with a fixed width.
         anchorLimit = placement == .followCaret ? vf.maxX - 8 - x : w
         fixedWidth = placement == .followCaret ? nil : w
     }
 
-    /// 左端（アンカー）は動かさず，幅だけ中身に合わせ直す．
+    /// Leaves the left edge (the anchor) alone and fits only the width to the content.
     private func resizeToContent() {
         let width = (fixedWidth ?? view.contentWidth(max: anchorLimit)).rounded()
         let frame = NSRect(x: anchor.x, y: anchor.y, width: width, height: BarView.totalHeight)
@@ -330,7 +330,7 @@ final class CandidateBar {
         } else if needsPlacement {
             place()
         }
-        view.debugOverride = debug ? "［位置］\(lastNote)" : nil
+        view.debugOverride = debug ? "\(String(localized: "[Position]")) \(lastNote)" : nil
         view.update(pending: pending, items: candidates, selected: selected, definition: definition)
         resizeToContent()
         panel.orderFrontRegardless()

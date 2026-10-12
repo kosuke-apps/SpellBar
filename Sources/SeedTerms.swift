@@ -1,8 +1,8 @@
 import Foundation
 
 extension CandidateEngine {
-    /// 英単語辞書に載っていない，プログラミングで頻出する識別子・API名の種辞書．
-    /// 追記したいものは ~/.config/spellbar/terms.txt に1行1語で足す．
+    /// Identifiers and API names that are common in programming but missing from English dictionaries.
+    /// To add more, put one word per line in ~/.config/spellbar/terms.txt.
     static let seedTerms: [String] = """
     async await asyncio coroutine goroutine mutex semaphore deadlock idempotent
     kwargs argv argc stderr stdout stdin errno printf sprintf snprintf malloc

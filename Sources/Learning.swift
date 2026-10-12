@@ -1,11 +1,11 @@
 import Foundation
 
-/// 確定した「打ち間違い → 選んだ語」の対応を覚えて，次から最優先で出す．
-/// 自分で辞書を育てる必要が無いよう，普通に使っているだけで貯まるようにしてある．
-/// アクセスは必ず CandidateEngine.queue の上だけで行うこと．
+/// Remembers which word was chosen for which misspelling, and offers it first next time.
+/// Nothing has to be maintained by hand: it fills up just by using the app.
+/// Access it only on `CandidateEngine.queue`.
 final class LearningStore {
 
-    private var map: [String: [String: Int]] = [:]   // 打った綴り -> (選んだ語 -> 回数)
+    private var map: [String: [String: Int]] = [:]   // typed spelling -> (chosen word -> times chosen)
     private let path: String
     private var dirty = false
 
@@ -16,7 +16,7 @@ final class LearningStore {
         load()
     }
 
-    /// この綴りに対して過去に選ばれた語を，選ばれた回数の多い順で返す．
+    /// The words chosen for this spelling before, most often chosen first.
     func preferred(for typed: String) -> [String] {
         guard let counts = map[typed.lowercased()] else { return [] }
         return counts.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
@@ -30,7 +30,7 @@ final class LearningStore {
         save()
     }
 
-    /// 覚えた対応の総数．設定画面などで見せる用．
+    /// The total number of remembered pairs.
     var count: Int { map.values.reduce(0) { $0 + $1.count } }
 
     private func load() {

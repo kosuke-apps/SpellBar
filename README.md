@@ -18,7 +18,9 @@ the system's own inline prediction and autocorrect never appear: VS Code, Chrome
 - **It learns.** The correction you pick for a misspelling is offered first the next time you make it. No list to
   maintain by hand.
 - **Meanings.** The selected candidate's dictionary definition appears under the candidates, so you can tell
-  `affect` from `effect`. `⌘D` opens the full entry in Dictionary.app.
+  `affect` from `effect`. `⌘D` opens the full entry in Dictionary.app. The text comes from the dictionaries you
+  have enabled in Dictionary.app, in the order you set there: an English–Japanese dictionary on top gives Japanese
+  glosses, an English dictionary on top gives English definitions.
 - **Programming words.** `async`, `kwargs`, `kubernetes` and friends are known, alongside the English dictionary.
 - **It stays out of the way.** The window follows the caret like an IME's, keeps its height and left edge steady, and
   disappears while the Japanese input method is composing kana or while macOS reports secure input.
@@ -42,17 +44,21 @@ Right Shift counts as the conversion key only when it is pressed and released wi
 
 macOS 13 or later, Apple silicon or Intel. Developed and used on macOS 26.
 
-The menu and the dictionary definitions are in Japanese at the moment; an English interface is planned.
+## Languages
+
+The menu and alerts are in **English and Japanese**. SpellBar follows your Mac's language order; to use the other
+one for this app alone, open **System Settings → General → Language & Region → Applications**, add SpellBar, and
+pick a language. Restart SpellBar afterwards.
 
 ## Install
 
-Download `SpellBar-1.1.0.dmg` from [Releases](../../releases), open it, and drag **SpellBar** onto the
+Download `SpellBar-1.2.0.dmg` from [Releases](../../releases), open it, and drag **SpellBar** onto the
 **Applications** folder in the same window.
 
 If you want to check the download first, compare it with the `.sha256` file published beside it:
 
 ```sh
-shasum -a 256 ~/Downloads/SpellBar-1.1.0.dmg
+shasum -a 256 ~/Downloads/SpellBar-1.2.0.dmg
 ```
 
 The app is signed but **not notarized**, so the first launch is blocked. Open it once, then go to **System Settings →
@@ -89,7 +95,8 @@ What SpellBar has learned lives in `~/.config/spellbar/learned.json`. Delete the
 
 ## Build
 
-No Xcode project, no dependencies: one script compiles the sources with `swiftc` and assembles the bundle.
+No Xcode project and no dependencies: one script compiles the sources with `swiftc` and assembles the bundle.
+Xcode has to be installed, because its `xcstringstool` compiles the String Catalog of the interface texts.
 
 ```sh
 ./build.sh
