@@ -23,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.2.0</string>
-  <key>CFBundleVersion</key><string>5</string>
+  <key>CFBundleVersion</key><string>6</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Kosuke Satake. MIT License.</string>
@@ -47,7 +47,9 @@ if ! xcrun --find xcstringstool >/dev/null 2>&1; then
 fi
 xcrun xcstringstool compile --output-directory "$APP/Contents/Resources" Resources/Localizable.xcstrings
 
-swiftc -O \
+# Build for Apple silicon and tell the linker the oldest macOS to support. Without -target the binary is stamped
+# with the version of the Mac that built it and refuses to start on anything older, whatever Info.plist says.
+swiftc -O -target arm64-apple-macos13.0 \
   -o "$APP/Contents/MacOS/SpellBar" \
   Sources/*.swift \
   -framework Cocoa -framework Carbon

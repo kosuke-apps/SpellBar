@@ -42,7 +42,8 @@ Right Shift counts as the conversion key only when it is pressed and released wi
 
 ## Requirements
 
-macOS 13 or later, Apple silicon or Intel. Developed and used on macOS 26.
+Apple silicon only: the app is built for arm64, with no Intel build. It is built for macOS 13 or later, but it has
+been tested only on macOS 26.
 
 ## Languages
 
@@ -52,14 +53,14 @@ pick a language. Restart SpellBar afterwards.
 
 ## Install
 
-Download `SpellBar-1.2.0.dmg` from [Releases](../../releases), open it, and drag **SpellBar** onto the
-**Applications** folder in the same window.
-
-If you want to check the download first, compare it with the `.sha256` file published beside it:
+Download `SpellBar-1.2.0.dmg` and `SpellBar-1.2.0.dmg.sha256` from [Releases](../../releases) into the same
+folder. To check the download, run this there; it must print `SpellBar-1.2.0.dmg: OK`:
 
 ```sh
-shasum -a 256 ~/Downloads/SpellBar-1.2.0.dmg
+shasum -a 256 -c SpellBar-1.2.0.dmg.sha256
 ```
+
+Then open the disk image and drag **SpellBar** onto the **Applications** folder in the same window.
 
 The app is signed but **not notarized**, so the first launch is blocked. Open it once, then go to **System Settings →
 Privacy & Security**, find the message about SpellBar near the bottom, and choose **Open Anyway**.

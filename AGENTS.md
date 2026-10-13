@@ -15,7 +15,8 @@ The user types Japanese and English from the Japanese input source's alphanumeri
 ## Stack
 
 Swift with AppKit, no Xcode project and no dependencies. `build.sh` compiles `Sources/*.swift` with `swiftc` and
-assembles `SpellBar.app` by hand. Deployment target macOS 13; developed on macOS 26.
+assembles `SpellBar.app` by hand. Apple silicon only (arm64), deployment target macOS 13 set with `-target`;
+developed and tested on macOS 26 only.
 
 ## Architecture
 
@@ -93,7 +94,7 @@ but not notarized, so the first launch needs Open Anyway. Build it from the same
 ```sh
 mkdir -p dist/stage && cp -R SpellBar.app dist/stage/ && ln -s /Applications dist/stage/Applications
 hdiutil create -volname SpellBar -srcfolder dist/stage -ov -format UDZO dist/SpellBar-X.Y.Z.dmg
-shasum -a 256 dist/SpellBar-X.Y.Z.dmg > dist/SpellBar-X.Y.Z.dmg.sha256
+(cd dist && shasum -a 256 SpellBar-X.Y.Z.dmg > SpellBar-X.Y.Z.dmg.sha256)   # bare file name, so `shasum -c` works beside it
 ```
 
 ## Still to do
