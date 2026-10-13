@@ -49,11 +49,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         try? SMAppService.mainApp.register()
     }
 
+    /// The settings to bring over from the previous identifier's domain: every key the new domain lacks.
+    static func settingsToCarry(from previous: [String: Any], into current: [String: Any]) -> [String: Any] {
+        previous.filter { current[$0.key] == nil }
+    }
+
     /// Carries the settings across the one change of bundle identifier.
     ///
-    /// macOS keys preferences by bundle identifier, so the new one starts with an empty domain. The login item
-    /// is keyed the same way, and its old registration cannot be reached from here, so it is made again under
-    /// the new identifier. The learned words live at a fixed path and are untouched.
+    /// macOS keys preferences by bundle identifier, so the new one starts with an empty domain. The learned words
+    /// live at a fixed path and are untouched.
+    ///
+    /// The login item is deliberately not registered here. Its old registration cannot be reached from the new
+    /// identifier, and nothing records whether the user had it on, so registering would switch it on again for
+    /// someone who had turned it off. The flag that the first-launch setup is done is carried, which keeps that
+    /// setup from running; the user switches the login item on from the menu.
     private func migrateSettingsFromPreviousIdentifier() {
         let defaults = UserDefaults.standard
         let migratedKey = "didMigrateFromPreviousBundleIdentifier"
@@ -62,13 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         guard let previous = defaults.persistentDomain(forName: AppDelegate.previousBundleIdentifier),
               !previous.isEmpty else { return }
-        for (key, value) in previous where defaults.object(forKey: key) == nil {
-            defaults.set(value, forKey: key)
-        }
-        if defaults.bool(forKey: AppDelegate.loginItemKey) {
-            try? SMAppService.mainApp.register()
-        }
-        Log.launch.notice("carried \(previous.count, privacy: .public) settings over from the previous bundle identifier")
+        let current = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+        let carried = AppDelegate.settingsToCarry(from: previous, into: current)
+        for (key, value) in carried { defaults.set(value, forKey: key) }
+        Log.launch.notice("carried \(carried.count, privacy: .public) settings over from the previous bundle identifier")
     }
 
     private func setupStatusItem() {
@@ -454,6 +460,24 @@ if CommandLine.arguments.contains("--selftest") {
             print("\(ok ? "ok  " : "FAIL") \(label.padding(toLength: 48, withPad: " ", startingAt: 0)) -> \(got ? "believed" : "refused")")
         }
         print(believedFailures == 0 ? "all \(believed.count) passed" : "\(believedFailures) FAILED")
+
+        print("\n--- settings carried over from the previous bundle identifier ---")
+        let oldDomain: [String: Any] = ["didSetUpLoginItem": true, "NSStatusItem Preferred Position Item-0": 794]
+        let migrationCases: [(String, [String: Any], [String: Any], Set<String>)] = [
+            ("fresh domain gets everything", oldDomain, [:],
+             ["didSetUpLoginItem", "NSStatusItem Preferred Position Item-0"]),
+            ("a key already set is not overwritten", oldDomain, ["NSStatusItem Preferred Position Item-0": 700],
+             ["didSetUpLoginItem"]),
+            ("nothing to carry from an empty domain", [:], [:], []),
+        ]
+        var migrationFailures = 0
+        for (label, previous, current, expected) in migrationCases {
+            let got = Set(AppDelegate.settingsToCarry(from: previous, into: current).keys)
+            let ok = got == expected
+            if !ok { migrationFailures += 1 }
+            print("\(ok ? "ok  " : "FAIL") \(label.padding(toLength: 40, withPad: " ", startingAt: 0)) -> \(got.sorted())")
+        }
+        print(migrationFailures == 0 ? "all \(migrationCases.count) passed" : "\(migrationFailures) FAILED")
         // Which language the app itself picks in this run, e.g. with `-AppleLanguages "(ja)"` on the command line.
         print("language chosen for this run: \(Bundle.main.preferredLocalizations.first ?? "?")"
               + " (\(String(localized: "Quit SpellBar")))")

@@ -75,9 +75,9 @@ Both are explained in [PRIVACY.md](PRIVACY.md). If SpellBar's icon shows a warni
 ### Upgrading from a build older than 1.1.0
 
 The bundle identifier changed in 1.1.0, so macOS treats the app as new: grant the two permissions again, and remove
-the old `SpellBar` entries in Accessibility and Input Monitoring with the `−` button. Your settings and learned words
-are carried over automatically. If an old SpellBar login item lingers in **System Settings → General → Login Items**,
-remove it there.
+the old `SpellBar` entries in Accessibility and Input Monitoring with the `−` button. Your learned words and menu
+settings are carried over automatically, but **Start at login is not**: switch it on again from the menu. If an old
+SpellBar login item lingers in **System Settings → General → Login Items**, remove it there.
 
 ## When it does nothing
 
