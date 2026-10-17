@@ -110,8 +110,19 @@ final class Engine {
 
     init() {
         bar = CandidateBar { [weak self] i in self?.confirm(index: i) }
+        warmUp()
         observeWake()
         observeAppSwitch()
+    }
+
+    /// The first dictionary lookup of a run takes half a second while macOS loads the dictionaries, and the first
+    /// spell-check a little less. Do both now, off the main thread, so that the first word typed is not the one
+    /// that waits.
+    private func warmUp() {
+        CandidateEngine.queue.async { [candidates] in
+            _ = Definitions.lookup("dictionary")
+            _ = candidates.candidates(for: "wrold")
+        }
     }
 
     // MARK: - Start
@@ -277,24 +288,40 @@ final class Engine {
         let tracked = words.target
         generation &+= 1
         let gen = generation
-        Engine.axQueue.async { [weak self] in
-            let actual = TextContext.wordAtCaret()
-            DispatchQueue.main.async {
-                guard let self, gen == self.generation, self.conv == nil else { return }
-                switch ConversionTarget.choose(tracked: tracked, actual: actual) {
-                case .tracked(let word)?:
-                    self.beginConversion(of: word.word, suffix: word.suffix)
-                case .atCaret(let word)?:
-                    // Move the caret to the end of the word so the usual backspace-and-retype replacement
-                    // applies. A right arrow collapses a selection to its end.
-                    let moves = word.caretToWordEnd + (word.selected ? 1 : 0)
-                    for _ in 0..<moves { Injector.tap(virtualKey: Engine.rightArrow, mark: self.injectMark) }
-                    self.beginConversion(of: word.text, suffix: word.suffix)
-                case nil:
-                    NSSound.beep()
-                }
+
+        // Reading the app's text can be slow, and the keystrokes often already know the word. So the conversion
+        // goes ahead without the reading once `readingDeadline` has passed, and a reading that arrives after
+        // that is ignored. With nothing from the keystrokes (the caret was moved) the reading is all there is,
+        // so it gets longer.
+        final class Request { var settled = false }
+        let request = Request()
+        let settle: (TextContext.Word?) -> Void = { [weak self] actual in
+            guard let self, !request.settled else { return }
+            request.settled = true
+            guard gen == self.generation, self.conv == nil else {
+                Log.runtime.notice("conversion dropped: a key was typed before the word was found")
+                return
+            }
+            switch ConversionTarget.choose(tracked: tracked, actual: actual) {
+            case .tracked(let word)?:
+                self.beginConversion(of: word.word, suffix: word.suffix)
+            case .atCaret(let word)?:
+                // Move the caret to the end of the word so the usual backspace-and-retype replacement
+                // applies. A right arrow collapses a selection to its end.
+                let moves = word.caretToWordEnd + (word.selected ? 1 : 0)
+                for _ in 0..<moves { Injector.tap(virtualKey: Engine.rightArrow, mark: self.injectMark) }
+                self.beginConversion(of: word.text, suffix: word.suffix)
+            case nil:
+                Log.runtime.notice("no word to convert: the keystrokes know none and the app's text \(actual == nil ? "could not be read" : "has none at the caret", privacy: .public)")
+                NSSound.beep()
             }
         }
+        Engine.axQueue.async {
+            let actual = TextContext.wordAtCaret()
+            DispatchQueue.main.async { settle(actual) }
+        }
+        let readingDeadline = tracked == nil ? 1.0 : 0.15
+        DispatchQueue.main.asyncAfter(deadline: .now() + readingDeadline) { settle(nil) }
     }
 
     private func beginConversion(of word: String, suffix: String) {
@@ -305,7 +332,11 @@ final class Engine {
             let list = self.candidates.candidates(for: word)
             DispatchQueue.main.async {
                 guard gen == self.generation, self.conv == nil else { return }
-                guard !list.isEmpty else { NSSound.beep(); return }
+                guard !list.isEmpty else {
+                    Log.runtime.notice("nothing to offer: the spell checker has no candidates for this word")
+                    NSSound.beep()
+                    return
+                }
                 self.words.reset()
                 self.conv = Conversion(original: word, list: list + [word], index: 0, placed: word, suffix: suffix)
                 self.apply(index: 0)
@@ -435,10 +466,16 @@ final class Engine {
         CandidateEngine.queue.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             guard let self, gen == self.generation else { return }
             let result = self.candidates.candidates(for: word)
-            let def = result.first.flatMap { Definitions.lookup($0) }
             DispatchQueue.main.async {
                 guard gen == self.generation, self.conv == nil else { return }
                 self.barItems = result
+                self.bar.show(pending: word, candidates: result, selected: nil, definition: self.shownDefinition)
+            }
+            // The meaning follows once it is known, so a slow dictionary never holds the candidates back. The
+            // previous meaning stays until then rather than blinking away on every key.
+            let def = result.first.flatMap { Definitions.lookup($0) }
+            DispatchQueue.main.async {
+                guard gen == self.generation, self.conv == nil else { return }
                 self.shownDefinition = def
                 self.bar.show(pending: word, candidates: result, selected: nil, definition: def)
             }

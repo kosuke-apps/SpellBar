@@ -18,6 +18,8 @@ enum TextContext {
         let selected: Bool
     }
 
+    /// The longest text read whole when an app cannot hand out a slice of it.
+    private static let maxWholeValue = 50_000
     /// Characters read on each side of the caret. Words are far shorter; this keeps big documents cheap.
     private static let reach = 64
     /// At most this many separators may sit between the word and the caret ("word, |" still finds "word").
@@ -97,9 +99,8 @@ enum TextContext {
     /// A slice of the input's text. Prefers asking for just the range; falls back to the whole value.
     private static func string(of element: AXUIElement, location: Int, length: Int) -> String? {
         var query = CFRange(location: location, length: length)
-        if let total = CaretLocator.copy(element, kAXNumberOfCharactersAttribute) as? Int {
-            query.length = max(min(query.length, total - query.location), 0)
-        }
+        let total = CaretLocator.copy(element, kAXNumberOfCharactersAttribute) as? Int
+        if let total { query.length = max(min(query.length, total - query.location), 0) }
         if let param = AXValueCreate(.cfRange, &query) {
             var out: CFTypeRef?
             if AXUIElementCopyParameterizedAttributeValue(
@@ -108,6 +109,9 @@ enum TextContext {
                 return text
             }
         }
+        // Asking for a slice failed, so the only way left is the whole text. A long document is not worth that:
+        // reading it can take seconds, and the keystrokes know the word without it.
+        if let total, total > maxWholeValue { return nil }
         guard let whole = CaretLocator.copy(element, kAXValueAttribute) as? String else { return nil }
         let ns = whole as NSString
         let from = min(location, ns.length)
